@@ -15,7 +15,6 @@ const typeDefs = gql`
   }
 
   type Transaction {
-    id: GraphQLLong!
     version: Int!
     timestamp: GraphQLLong!
     inputs: [Input!]!
@@ -24,14 +23,13 @@ const typeDefs = gql`
   }
 
   type Input {
-    id: Int!
     previousTransactionHash: String!
     outputIndex: Int!
-    signature: String!
+    signature: [Int!]!
+    senderPublicKey: String!
   }
 
   type Output {
-    id: Int!
     recipientPublicKeyHash: String!
     value: GraphQLLong!
   }
@@ -44,7 +42,12 @@ const typeDefs = gql`
   }
 
   type Mutation {
-    generateBlock(): Block
+    generateBlock: Block
+    createTransaction(
+      value: GraphQLLong!
+      fee: GraphQLLong!
+      memo: String
+    ): Transaction
   }
 `;
 

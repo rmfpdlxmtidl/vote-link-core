@@ -86,10 +86,28 @@ export function getNonce(blockHeader) {
 // Transaction의 해시값을 구한다. 순수함수
 export function getTransactionHash({ version, inputs, outputs, timestamp }) {
   const inputsData = inputs.map(
+    input => input.previousTransactionHash + input.outputIndex + input.signature
+  );
+
+  const outputsData = outputs.map(
+    output => output.recipientPublicKeyHash + output.value
+  );
+
+  return CryptoJS.SHA256(
+    version + inputsData.join('') + outputsData.join('') + timestamp
+  ).toString();
+}
+
+//
+export function getTransactionMessage(
+  { version, inputs, outputs, timestamp },
+  previousTransactionOutputRecipientPublicKeyHash
+) {
+  const inputsData = inputs.map(
     input =>
       input.previousTransactionHash +
       input.outputIndex +
-      input.signature
+      previousTransactionOutputRecipientPublicKeyHash
   );
 
   const outputsData = outputs.map(
@@ -113,37 +131,37 @@ export function getBlockchainDifficulty(blockchain) {
 export function isValidBlockHeader(block, previousBlock) {
   // 블록 헤더의 구조가 유효한지
   if (!isValidBlockHeaderStructure(block)) {
-    console.warn('isValidBlockHeader() : Invalid block structure');
+    console.warn('isValidBlockHeader(): Invalid block structure');
     return false;
   }
   // 블록 해시 앞에 0이 몇 개 있는지 = 블록 해시 제대로 채굴했는지
   if (!isValidBlockHash(getBlockHash(block), block.bits)) {
-    console.warn('isValidBlockHeader() : Invalid block hash');
+    console.warn('isValidBlockHeader(): Invalid block hash');
     console.warn('Expected: ' + block.bits + ', Got: ' + getBlockHash(block));
     return false;
   }
   // 버전이 1인지
   if (block.version !== 1) {
-    console.log('isValidBlockHeader() : Version is not 1');
+    console.log('isValidBlockHeader(): Version is not 1');
   }
   //  블록의 previousBLockHash와 이전 블록의 해시가 일치하는지
   if (getBlockHash(previousBlock) !== block.previousBlockHash) {
-    console.warn('isValidBlockHeader() : Invalid previous block hash');
+    console.warn('isValidBlockHeader(): Invalid previous block hash');
     return false;
   }
   // 머클 루트 해시의 유효성 검사
   if (getMerkleRoot(block.transactions) !== block.merkleRoot) {
-    console.warn('isValidBlockHeader() : Invalid merkle root');
+    console.warn('isValidBlockHeader(): Invalid merkle root');
     return false;
   }
   // timestamp값이 유효한지
   if (!isValidTimestamp(block, previousBlock)) {
-    console.warn('isValidBlockHeader() : Invalid timestamp');
+    console.warn('isValidBlockHeader(): Invalid timestamp');
     return false;
   }
   // bits값이 제대로 산출됐는지
   if (getBits(block.id) !== block.bits) {
-    console.warn('isValidBlockHeader() : Invalid bits');
+    console.warn('isValidBlockHeader(): Invalid bits');
     return false;
   }
 

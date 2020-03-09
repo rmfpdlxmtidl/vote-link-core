@@ -1,11 +1,13 @@
+import CryptoJS from 'crypto-js';
 import { hashRegExp, publicPointRegExp, ec } from '../utils';
-import { getTransactionHash } from './block';
+import { getTransactionMessage, getTransactionOutput } from './blockchain';
 
 // coinbase transaction을 반환한다. 순수함수
 export function getCoinbaseTransaction(
   minerPublicKeyHash,
   blockID,
-  transactionFee
+  transactionFee,
+  memo
 ) {
   return {
     version: 1,
@@ -15,7 +17,7 @@ export function getCoinbaseTransaction(
         previousTransactionHash: '0'.repeat(64),
         outputIndex: -1,
         signature: [blockID, 0],
-        senderPublicKey: '0'.repeat(128)
+        senderPublicKey: '0'.repeat(130)
       }
     ],
     outputs: [
@@ -24,7 +26,7 @@ export function getCoinbaseTransaction(
         value: getCoinbaseBasicValue(blockID) + transactionFee
       }
     ],
-    memo: 'Coinbase Transaction'
+    memo
   };
 }
 
@@ -41,7 +43,6 @@ export function isCoinbaseTransaction(transaction, blockID) {
     return false;
   if (transaction.inputs[0].outputIndex !== -1) return false;
   if (transaction.inputs[0].signature[0] !== blockID) return false;
-
   return true;
 }
 
@@ -49,12 +50,12 @@ export function isCoinbaseTransaction(transaction, blockID) {
 export function isValidCoinbaseTransaction(transaction, block) {
   // Transaction 데이터 구조 유효성
   if (!isValidTransactionStructure(transaction)) {
-    console.warn('isValidTransaction() : Invalid transaction structure');
+    console.warn('isValidTransaction(): Invalid transaction structure');
     return false;
   }
   // Transactoin 버전은 항상 1
   if (transaction.version !== 1) {
-    console.warn('isValidTransaction() : Invalid transaction version');
+    console.warn('isValidTransaction(): Invalid transaction version');
     return false;
   }
   // 수수료 보상 유효성
@@ -63,7 +64,7 @@ export function isValidCoinbaseTransaction(transaction, block) {
     getCoinbaseBasicValue(block.id) + getTotalTransactionFee(block.transactions)
   ) {
     console.warn(
-      'isValidCoinbaseTransaction() : Invalid coinbase transaction output value'
+      'isValidCoinbaseTransaction(): Invalid coinbase transaction output value'
     );
     return false;
   }
@@ -71,54 +72,87 @@ export function isValidCoinbaseTransaction(transaction, block) {
   return true;
 }
 
-// 일반 transaction만 검사할 수 있다. 순수함수
+// 일반 transaction만 검사할 수 있다. 비순수함수
 // isValidOutput은 isUTXO(), isSTXO() 둘 중 하나 넣어준다.
 export function isValidTransaction(transaction, isTXO) {
-  // Transaction 데이터 구조 유효성
+  console.log(transaction);
+
+  // Coinbase인지 확인. 필요함
   if (isCoinbaseTransaction(transaction)) {
-    console.warn('isValidTransaction() : Coinbase transaction');
+    console.warn('isValidTransaction(): Coinbase transaction');
     return false;
   }
   // Transaction 데이터 구조 유효성
   if (!isValidTransactionStructure(transaction)) {
-    console.warn('isValidTransaction() : Invalid transaction structure');
+    console.warn('isValidTransaction(): Invalid transaction structure');
     return false;
   }
   // Transactoin 버전은 항상 1
   if (transaction.version !== 1) {
-    console.warn('isValidTransaction() : Invalid transaction version');
+    console.warn('isValidTransaction(): Invalid transaction version');
     return false;
   }
-  /*
-  signature: [utxo.recipientPublicKeyHash] -> hashing
-
-  getPreviousTransaction(transactionHash)
-
-  */
-  // 서명 유효성, UTXO 참조 검사
+  // Transaction의 input 검사
+  let inputSum = 0;
   if (
     !transaction.inputs.every(input => {
-      const previousOutput = getOutput(
+      const previousTransactionOutput = getTransactionOutput(
         input.previousTransactionHash,
         input.outputIndex
       );
-
-      return (
-        isValidSenderPublicKey(
-          input.senderPublicKey,
-          getOutput(input.previousTransactionHash, input.outputIndex)
-            .recipientPublicKeyHash
-        ) &&
-        ec
+      // previous transaction output이 존재하는지
+      if (!previousTransactionOutput) {
+        console.warn(
+          'isValidTransaction(): There is no previous transaction output'
+        );
+        return false;
+      }
+      // 각 input의 senderPublicKey의 유효성
+      if (
+        !CryptoJS.SHA256(input.senderPublicKey).toString() ===
+        previousTransactionOutput.recipientPublicKeyHash
+      ) {
+        console.warn(
+          'isValidTransaction(): Invalid transaction input senderPublicKey'
+        );
+        return false;
+      }
+      // 각 input의 signature의 유효성
+      if (
+        !ec
           .keyFromPublic(input.senderPublicKey, 'hex')
-          .verify(getTransactionHash(transaction), input.signature) &&
-        isTXO(input.previousTransactionHash, input.outputIndex)
-      );
+          .verify(
+            getTransactionMessage(
+              transaction,
+              previousTransactionOutput.recipientPublicKeyHash
+            ),
+            input.signature
+          )
+      ) {
+        console.warn(
+          'isValidTransaction(): Invalid transaction input signature'
+        );
+        return false;
+      }
+      // 각 input의 previous transaction output의 유효성
+      if (!isTXO(input.previousTransactionHash, input.outputIndex)) {
+        console.warn(
+          'isValidTransaction(): Invalid previous transaction output'
+        );
+        return false;
+      }
+      inputSum += previousTransactionOutput.value;
+      return true;
     })
   ) {
-    console.warn(
-      'isValidTransaction() : Invalid transaction signature or previous output'
-    );
+    console.warn('isValidTransaction(): Invalid transaction inputs');
+    return false;
+  }
+  // Total input >= Total output인지 확인
+  if (
+    inputSum < transaction.outputs.reduce((acc, output) => acc + output.value)
+  ) {
+    console.warn('isValidTransaction(): Total input < Total output');
     return false;
   }
 
@@ -126,9 +160,8 @@ export function isValidTransaction(transaction, isTXO) {
 }
 
 // Transaction의 형태를 검사한다. 순수함수
-function isValidTransactionStructure(transaction) {
+export function isValidTransactionStructure(transaction) {
   return (
-    Number.isInteger(transaction.id) &&
     Number.isInteger(transaction.version) &&
     Number.isInteger(transaction.timestamp) &&
     typeof transaction.memo === 'string' &&
@@ -136,18 +169,20 @@ function isValidTransactionStructure(transaction) {
     typeof transaction.outputs === 'object' &&
     transaction.inputs.every(
       input =>
-        Number.isInteger(input.id) &&
-        hashRegExp.test(previousTransactionHash) &&
+        hashRegExp.test(input.previousTransactionHash) &&
         Number.isInteger(input.outputIndex) &&
         typeof input.signature === 'object' &&
         input.signature.length === input.signature[1] + 2 &&
         publicPointRegExp.test(input.senderPublicKey)
-    ) &&
+    )
+
+    /*
+    &&
     transaction.outputs.every(
       output =>
-        Number.isInteger(output.id) &&
-        hashRegExp.test(minerPublicKeyHash) &&
-        Number.isInteger(value)
+        hashRegExp.test(output.recipientPublicKeyHash) &&
+        Number.isInteger(output.value)
     )
+*/
   );
 }

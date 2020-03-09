@@ -1,11 +1,15 @@
 import GraphQLLong from 'graphql-type-long';
 import blockchain, {
+  UTXO,
   isValidBlockchain,
   isValidBlock,
   generateBlock,
   createTransaction
 } from '../blockchain/blockchain';
-import wallet from '../blockchain/wallet';
+import wallet, { recipientWallet } from '../blockchain/wallet';
+import { isValidTransaction } from '../blockchain/transaction';
+
+const testTxPool = [];
 
 const resolvers = {
   GraphQLLong,
@@ -23,16 +27,20 @@ const resolvers = {
   },
   Mutation: {
     generateBlock: () => {
-      return generateBlock();
+      return generateBlock(testTxPool, wallet.publicKeyHash);
     },
-    createTransaction: (_, { recipientPublicKeyHash, value, fee, memo }) => {
-      return createTransaction(
+    createTransaction: (_, { value, fee, memo }) => {
+      const tx = createTransaction(
         wallet.privateKey,
-        recipientPublicKeyHash,
+        recipientWallet.publicKeyHash,
         value,
         fee,
         memo
       );
+      if (!tx) return null;
+      testTxPool.push(tx);
+      console.log(isValidTransaction(tx));
+      return tx;
     }
   }
 };

@@ -4,9 +4,9 @@ import {
   getMerkleRoot,
   getBits,
   getNonce,
-  getTransactionHash,
   getBlockchainDifficulty,
-  isValidBlockHeader
+  isValidBlockHeader,
+  getTransactionHash
 } from './block';
 import {
   getCoinbaseTransaction,
@@ -24,29 +24,7 @@ const genesisBlock = {
   timestamp: new Date().getTime(),
   bits: 10,
   nonce: 0,
-  transactions: [
-    {
-      version: 1,
-      timestamp: new Date().getTime(),
-      inputs: [
-        {
-          previousTransactionHash: '0'.repeat(64),
-          outputIndex: -1,
-          signature: [],
-          senderPublicKey: '0'.repeat(130)
-        }
-      ],
-      outputs: [
-        {
-          recipientPublicKeyHash: CryptoJS.SHA256(
-            wallet.privateKey.getPublic().encode('hex')
-          ).toString(),
-          value: 50
-        }
-      ], // recipientPublicKeyHash 수정 필요
-      memo: "Genesis Block's Coinbase Transaction"
-    }
-  ]
+  transactions: []
 };
 
 export const blockchain = [generateGenesisBlock()];
@@ -55,6 +33,14 @@ export const UTXO = [];
 
 // 제네시스 블록을 생성. 비순수함수
 function generateGenesisBlock() {
+  genesisBlock.transactions.push(
+    getCoinbaseTransaction(
+      CryptoJS.SHA256(wallet.privateKey.getPublic().encode('hex')).toString(),
+      0,
+      0,
+      "Genesis Block's Coinbase Transaction"
+    )
+  );
   genesisBlock.merkleRoot = getMerkleRoot(genesisBlock.transactions);
   genesisBlock.nonce = getNonce(genesisBlock);
   return genesisBlock;
@@ -62,6 +48,7 @@ function generateGenesisBlock() {
 
 // 새로운 블록을 생성. 비순수함수
 export function generateBlock(transactions, minerPublicKeyHash) {
+  // transactions pop 필요
   if (
     !transactions.every(transaction => isValidTransaction(transaction, isUTXO))
   ) {
@@ -106,12 +93,10 @@ export function createTransaction(
   memo
 ) {
   // 보유 금액 게산
-  if (
-    getBalance(
-      CryptoJS.SHA256(senderPrivateKey.getPublic().encode('hex')).toString()
-    ) <
-    value + fee
-  ) {
+  updateUTXO(
+    CryptoJS.SHA256(senderPrivateKey.getPublic().encode('hex')).toString()
+  );
+  if (getBalance() < value + fee) {
     console.warn('createTransaction() : not enough balance');
     return null;
   }
@@ -187,26 +172,29 @@ export function createTransaction(
 
 // 블록체인이 유효한지 검증한다. 외부 변수(genesisBlock) 참조
 export function isValidBlockchain(blockchain) {
-  // 새로운 블록체인의 제네시스 블록이 기존 제네시스 블록과 일치하는지 확인
-  if (JSON.stringify(blockchain[0]) !== JSON.stringify(genesisBlock)) {
-    console.warn('isValidBlockchain() : Invalid genesis block');
-    return false;
-  }
-
   if (!blockchain.every(block => isValidBlock(block))) {
     console.warn('isValidBlockchain() : Invalid block');
     return false;
   }
-
   return true;
 }
 
 // 외부변수(blockchain) 참조
 export function isValidBlock(block) {
+  // 제네시스 블록이면 하드코딩된 제네시스 블록과 일치하는지 확인
+  if (block.id === 0) {
+    if (JSON.stringify(block) !== JSON.stringify(genesisBlock)) {
+      console.warn('isValidBlock() : Invalid genesis block');
+      return false;
+    }
+    return true;
+  }
+  // 블록 헤더가 유효한지 확인
   if (!isValidBlockHeader(block, blockchain[block.id - 1])) {
     console.warn('isValidBlock() : Invalid block header');
     return false;
   }
+  // 블록의 모든 transaction이 유효한지 확인
   if (
     !block.transactions.every(transaction => {
       if (isCoinbaseTransaction(transaction, block.id))
@@ -217,9 +205,11 @@ export function isValidBlock(block) {
     console.warn('isValidBlock() : Invalid transaction');
     return false;
   }
+  return true;
 }
 
-// 해당 output이 한번도 참조되지 않았으면 true를 반환하고, 그 외 false 반환한다. 외부 변수(blockchain) 참조
+// 해당 output이 한번도 참조되지 않았으면 true를 반환하고, 그 외 false 반환한다.
+// 외부 변수(blockchain) 참조
 function isUTXO(transactionHash, outputIndex) {
   return blockchain.every(block =>
     block.transactions.every(transaction =>
@@ -232,65 +222,30 @@ function isUTXO(transactionHash, outputIndex) {
   );
 }
 
-// output이 참조됐는지 확인한다. 외부 변수(blockchain) 참조
+// output이 1번만 참조됐으면 true를, 이외의 경우엔 false를 반환한다.
+// 외부 변수(blockchain) 참조
 function isSTXO(transactionHash, outputIndex) {
   let referenceCount = 0;
-  const blockchainLength = blockchain.length;
-  for (let i = 0; i < blockchainLength; i++) {
-    const transactions = blockchain[i].transactions;
-    const transactionsLength = transactions.length;
-    for (let j = 0; j < transactionsLength; j++) {
-      const inputs = transactions[j].inputs;
-      const inputsLength = inputs.length;
-      for (let k = 0; k < inputsLength; k++) {
-        if (
-          inputs[k].previousTransactionHash === transactionHash &&
-          inputs[k].outputIndex === outputIndex
-        ) {
-          referenceCount++;
-          if (referenceCount > 1) return false;
-        }
-      }
-    }
-  }
-  return referenceCount === 1;
+  return (
+    blockchain.every(block =>
+      block.transactions.every(transaction =>
+        transaction.inputs.every(input => {
+          if (
+            input.previousTransactionHash === transactionHash &&
+            input.outputIndex === outputIndex
+          ) {
+            referenceCount++;
+            if (referenceCount > 1) return false;
+          }
+          return true;
+        })
+      )
+    ) && referenceCount === 1
+  );
 }
 
-// 매개변수 transaction은 유효해야 함
-function getTransactionFee(transaction) {
-  const inputSum = transaction.inputs.reduce((acc, input) => {
-    const blockchainLength = blockchain.length;
-    for (let i = 0; i < blockchainLength; i++) {
-      const transactions = blockchain[i].transactions;
-      const transactionsLength = transactions.length;
-      for (let j = 0; j < transactionsLength; j++) {
-        if (
-          getTransactionHash(transactions[j]) === input.previousTransactionHash
-        )
-          return acc + transactions[j].outputs[input.outputIndex].value;
-      }
-    }
-
-    console.warn('getTransactionFee() : There is no previous output');
-    return acc;
-  });
-
-  const outputSum = transaction.outputs.reduce((acc, output) => {
-    return acc + output.value;
-  });
-
-  return inputSum - outputSum;
-}
-
-// 매개변수 transactions은 유효해야 함
-function getTotalTransactionFee(transactions) {
-  return transactions.reduce((acc, transaction) => {
-    return acc + getTransactionFee(transaction);
-  });
-}
-
-function getBalance(recipientPublicKeyHash) {
-  // UTXO를 갱신한다.
+// UTXO를 갱신한다.
+function updateUTXO(recipientPublicKeyHash) {
   UTXO.length = 0;
   const blockchainLength = blockchain.length;
   for (let i = 0; i < blockchainLength; i++) {
@@ -307,17 +262,62 @@ function getBalance(recipientPublicKeyHash) {
           UTXO.push({
             previousTransactionHash: getTransactionHash(transactions[j]),
             outputIndex: k,
-            ...output[k]
+            ...outputs[k]
           });
       }
     }
   }
   // value 기준 내림차순 정렬
   UTXO.sort((a, b) => b[value] - a[value]);
-  // 잔액을 계산한다.
-  return UTXO.reduce((acc, utxo) => {
-    return acc + utxo.value;
+}
+
+function getBalance() {
+  return UTXO.reduce((acc, utxo) => acc + utxo.value);
+}
+
+// 매개변수 transaction은 유효해야 함
+function getTransactionFee(transaction) {
+  const inputSum = transaction.inputs.reduce((acc, input) => {
+    return (
+      acc +
+      getTransactionOutput(input.previousTransactionHash, input.outputIndex)
+        .value
+    );
   });
+
+  const outputSum = transaction.outputs.reduce((acc, output) => {
+    return acc + output.value;
+  });
+
+  return inputSum - outputSum;
+}
+
+// 매개변수 transactions은 유효해야 함
+function getTotalTransactionFee(transactions) {
+  return transactions.reduce((acc, transaction) => {
+    return acc + getTransactionFee(transaction);
+  });
+}
+
+// 해당 Transaction을 찾으면 그 Transaction을 반환하고, 못 찾으면 null을 반환한다. blockchain 참조
+export function getTransaction(transactionHash) {
+  let tx;
+  return blockchain.some(block => {
+    block.transactions.some(transaction => {
+      if (getTransactionHash(transaction) === transactionHash) {
+        tx = transaction;
+        return true;
+      }
+    });
+  })
+    ? tx
+    : null;
+}
+
+// 해당 Transaction output을 찾으면 그 output을 반환하고, 못 찾으면 null을 반환한다. blockchain 참조
+export function getTransactionOutput(transactionHash, outputIndex) {
+  const transaction = getTransaction(transactionHash);
+  return transaction ? transaction.outputs[outputIndex] : null;
 }
 
 // 비순수함수
@@ -337,3 +337,5 @@ export const replaceBlockchain = receivedBlockchain => {
 };
 
 export default blockchain;
+
+/* 예비 블록에 포함된 tx까지 고려해서 tx 유효성을 검사해야 한다. */
