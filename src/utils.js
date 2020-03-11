@@ -1,10 +1,10 @@
 import ecdsa from 'elliptic';
 
 export const ec = new ecdsa.ec('secp256k1');
-export const hashRegExp = /[0-9A-Fa-f]{64}/g;
-export const publicPointRegExp = /[0-9A-Fa-f]{130}/g;
+export const hashRegExp = /[0-9A-Fa-f]{64}/;
+export const publicPointRegExp = /[0-9A-Fa-f]{130}/;
 
-export const hexToBinary = s => {
+export function hexToBinary(s) {
   const result = [];
   const lookupTable = {
     '0': '0000',
@@ -33,4 +33,4 @@ export const hexToBinary = s => {
     }
   }
   return result.join('');
-};
+}

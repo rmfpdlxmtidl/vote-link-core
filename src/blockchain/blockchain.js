@@ -4,38 +4,44 @@ import {
   getMerkleRoot,
   getBits,
   getNonce,
+  getTransactionHash,
+  getTransactionMessage,
   getBlockchainDifficulty,
-  isValidBlockHeader,
-  getTransactionHash
+  isValidBlockHeader
 } from './block';
 import {
   getCoinbaseTransaction,
-  isValidTransaction,
-  isCoinbaseTransaction,
-  isValidCoinbaseTransaction
+  getCoinbaseBasicValue,
+  isValidTransactionStructure,
+  isCoinbaseTransaction
 } from './transaction';
-import wallet from './wallet';
+import wallet, { getPublicKey } from './wallet';
+import { ec } from '../utils';
 
-const genesisBlock = {
-  id: 0,
-  version: 1,
-  previousBlockHash: '0'.repeat(64),
-  merkleRoot: '',
-  timestamp: new Date().getTime(),
-  bits: 10,
-  nonce: 0,
-  transactions: []
-};
+function broadcastLatest() {
+  console.log('broadcasting last block...');
+}
 
 export const blockchain = [generateGenesisBlock()];
-export const transactionPool = [];
+const transactionPool = [];
 export const UTXO = [];
 
 // 제네시스 블록을 생성. 비순수함수
 function generateGenesisBlock() {
+  const genesisBlock = {
+    id: 0,
+    version: 1,
+    previousBlockHash: '0'.repeat(64),
+    merkleRoot: '',
+    timestamp: new Date().getTime(),
+    bits: 10,
+    nonce: 0,
+    transactions: []
+  };
+
   genesisBlock.transactions.push(
     getCoinbaseTransaction(
-      CryptoJS.SHA256(wallet.privateKey.getPublic().encode('hex')).toString(),
+      wallet.publicKeyHash,
       0,
       0,
       "Genesis Block's Coinbase Transaction"
@@ -48,7 +54,7 @@ function generateGenesisBlock() {
 
 // 새로운 블록을 생성. 비순수함수
 export function generateBlock(transactions, minerPublicKeyHash) {
-  // transactions pop 필요
+  // @@ 블록에 넣은 transactions은 pop 필요
   if (
     !transactions.every(transaction => isValidTransaction(transaction, isUTXO))
   ) {
@@ -56,11 +62,13 @@ export function generateBlock(transactions, minerPublicKeyHash) {
     return null;
   }
 
+  const id = blockchain.length;
   transactions.unshift(
     getCoinbaseTransaction(
       minerPublicKeyHash,
-      blockchain.length,
-      getTotalTransactionFee(transactions)
+      id,
+      getTotalTransactionFee(transactions),
+      'Coinbase Transaction'
     )
   );
 
@@ -69,19 +77,21 @@ export function generateBlock(transactions, minerPublicKeyHash) {
     previousBlockHash: getBlockHash(blockchain[blockchain.length - 1]),
     merkleRoot: getMerkleRoot(transactions),
     timestamp: new Date().getTime(),
-    bits: getBits(blockchain),
+    bits: 0,
     nonce: 0
   };
+  newBlockHeader.bits = getBits(id, newBlockHeader.timestamp);
+  newBlockHeader.nonce = getNonce(newBlockHeader);
 
   const newBlock = {
-    id: blockchain.length,
+    id,
     ...newBlockHeader,
     transactions
   };
-
-  newBlock.nonce = getNonce(newBlockHeader);
   blockchain.push(newBlock);
   broadcastLatest();
+
+  console.log(newBlock.transactions[0].outputs);
   return newBlock;
 }
 
@@ -92,30 +102,31 @@ export function createTransaction(
   fee,
   memo
 ) {
+  const senderPublicKey = getPublicKey(senderPrivateKey);
+  const senderPublicKeyHash = CryptoJS.SHA256(senderPublicKey).toString();
+
   // 보유 금액 게산
-  updateUTXO(
-    CryptoJS.SHA256(senderPrivateKey.getPublic().encode('hex')).toString()
-  );
+  updateUTXO(senderPublicKeyHash);
   if (getBalance() < value + fee) {
-    console.warn('createTransaction() : not enough balance');
+    console.warn('createTransaction(): Not enough balance');
     return null;
   }
 
   const inputs = [];
   const outputs = [];
-
   let inputSum = 0;
-  UTXO.every(utxo => {
+  for (let i = UTXO.length - 1; i > -1; i--) {
     if (value + fee > inputSum) {
       inputs.push({
-        previousTransactionHash: utxo.previousTransactionHash,
-        outputIndex: utxo.outputIndex,
-        signature: [utxo.recipientPublicKeyHash],
-        senderPublicKey: senderPrivateKey.getPublic().encode('hex')
+        previousTransactionHash: UTXO[i].previousTransactionHash,
+        outputIndex: UTXO[i].outputIndex,
+        signature: [UTXO[i].recipientPublicKeyHash],
+        senderPublicKey
       });
-      inputSum += utxo.value;
-    } else return false; // every함수 break
-  });
+      inputSum += UTXO[i].value;
+      UTXO.pop();
+    } else break; // every함수 break
+  }
 
   // 여러 명의 수신인에게 금액 전송
   if (
@@ -138,16 +149,16 @@ export function createTransaction(
   }
   // 그 외
   else {
-    console.warn('createTransaction() : fail to create new transaction');
+    console.warn(
+      'createTransaction(): Invalid recipient public key hash or value'
+    );
     return null;
   }
 
   // 거스름돈 계산
   if (value + fee != inputSum) {
     outputs.push({
-      recipientPublicKeyHash: CryptoJS.SHA256(
-        senderPrivateKey.getPublic().encode('hex')
-      ).toString(),
+      recipientPublicKeyHash: senderPublicKeyHash,
       value: inputSum - value - fee
     });
   }
@@ -164,7 +175,10 @@ export function createTransaction(
   // Transaction의 모든 input에 서명한다.
   const transactionHash = getTransactionHash(transaction);
   transaction.inputs.forEach(input => {
-    input.signature = senderPrivateKey.sign(transactionHash).toDER();
+    input.signature = ec
+      .keyFromPrivate(senderPrivateKey, 'hex')
+      .sign(transactionHash)
+      .toDER();
   });
 
   return transaction;
@@ -183,7 +197,7 @@ export function isValidBlockchain(blockchain) {
 export function isValidBlock(block) {
   // 제네시스 블록이면 하드코딩된 제네시스 블록과 일치하는지 확인
   if (block.id === 0) {
-    if (JSON.stringify(block) !== JSON.stringify(genesisBlock)) {
+    if (JSON.stringify(block) !== JSON.stringify(blockchain[0])) {
       console.warn('isValidBlock() : Invalid genesis block');
       return false;
     }
@@ -196,11 +210,9 @@ export function isValidBlock(block) {
   }
   // 블록의 모든 transaction이 유효한지 확인
   if (
-    !block.transactions.every(transaction => {
-      if (isCoinbaseTransaction(transaction, block.id))
-        return isValidCoinbaseTransaction(transaction, block);
-      else return isValidTransaction(transaction, isSTXO);
-    })
+    !block.transactions.every(transaction =>
+      isValidTransaction(transaction, isSTXO, block)
+    )
   ) {
     console.warn('isValidBlock() : Invalid transaction');
     return false;
@@ -208,9 +220,118 @@ export function isValidBlock(block) {
   return true;
 }
 
+// getTotalTransactionFee()거 외부 변수 참조
+function isValidCoinbaseTransaction(coinbaseTransaction, block) {
+  // 서명에 블록 높이가 써져있는지
+  if (coinbaseTransaction.inputs[0].signature[0] !== block.id) return false;
+  // 수수료 보상 유효성
+  if (
+    coinbaseTransaction.outputs[0].value !==
+    getCoinbaseBasicValue(block.id) + getTotalTransactionFee(block.transactions)
+  ) {
+    console.warn(
+      'isValidCoinbaseTransaction(): Invalid coinbase transaction output value'
+    );
+    return false;
+  }
+
+  return true;
+}
+
+// 일반 transaction만 검사할 수 있다. 비순수함수
+// isValidOutput은 isUTXO(), isSTXO() 둘 중 하나 넣어준다.
+// block은 해당 transaction이 담긴 블록을 넣어준다. 담긴 블록이 없으면 genesis block을 넣는다.
+// @@@@block에 담긴 tx, 담기지 않은 tx, coinbase tx 3가지를 구분해서 검증해야 한다.
+export function isValidTransaction(transaction, isTXO, block) {
+  // Transaction 데이터 구조 유효성
+  if (!isValidTransactionStructure(transaction)) {
+    console.warn('isValidTransaction(): Invalid transaction structure');
+    return false;
+  }
+  // Transactoin 버전은 항상 1
+  if (transaction.version !== 1) {
+    console.warn('isValidTransaction(): Invalid transaction version');
+    return false;
+  }
+  // Coinbase인지 확인
+  if (isCoinbaseTransaction(transaction)) {
+    if (!isValidCoinbaseTransaction(transaction, block)) {
+      console.warn('isValidTransaction(): Invalid coinbase transaction');
+      return false;
+    } else return true;
+  }
+  /*
+  // Transaction의 input 검사
+  let inputSum = 0;
+  if (
+    !transaction.inputs.every(input => {
+      const previousTransactionOutput = getTransactionOutput(
+        input.previousTransactionHash,
+        input.outputIndex
+      );
+      // previous transaction output이 존재하는지
+      if (!previousTransactionOutput) {
+        console.warn(
+          'isValidTransaction(): There is no previous transaction output'
+        );
+        return false;
+      }
+      // 각 input의 senderPublicKey의 유효성
+      if (
+        !CryptoJS.SHA256(input.senderPublicKey).toString() ===
+        previousTransactionOutput.recipientPublicKeyHash
+      ) {
+        console.warn(
+          'isValidTransaction(): Invalid transaction input senderPublicKey'
+        );
+        return false;
+      }
+      // 각 input의 signature의 유효성
+      if (
+        !ec
+          .keyFromPublic(input.senderPublicKey, 'hex')
+          .verify(
+            getTransactionMessage(
+              transaction,
+              previousTransactionOutput.recipientPublicKeyHash
+            ),
+            input.signature
+          )
+      ) {
+        console.warn(
+          'isValidTransaction(): Invalid transaction input signature'
+        );
+        return false;
+      }
+      // 각 input의 previous transaction output의 유효성
+      if (!isTXO(input.previousTransactionHash, input.outputIndex)) {
+        console.warn(
+          'isValidTransaction(): Invalid previous transaction output'
+        );
+        return false;
+      }
+      inputSum += previousTransactionOutput.value;
+      return true;
+    })
+  ) {
+    console.warn('isValidTransaction(): Invalid transaction inputs');
+    return false;
+  }
+  // Total input >= Total output인지 확인
+  if (
+    inputSum < transaction.outputs.reduce((acc, output) => acc + output.value)
+  ) {
+    console.warn('isValidTransaction(): Total input < Total output');
+    return false;
+  }
+  */
+
+  return true;
+}
+
 // 해당 output이 한번도 참조되지 않았으면 true를 반환하고, 그 외 false 반환한다.
 // 외부 변수(blockchain) 참조
-function isUTXO(transactionHash, outputIndex) {
+export function isUTXO(transactionHash, outputIndex) {
   return blockchain.every(block =>
     block.transactions.every(transaction =>
       transaction.inputs.every(
@@ -267,8 +388,8 @@ function updateUTXO(recipientPublicKeyHash) {
       }
     }
   }
-  // value 기준 내림차순 정렬
-  UTXO.sort((a, b) => b[value] - a[value]);
+  // value 기준 오름차순 정렬
+  UTXO.sort((a, b) => a[value] - b[value]);
 }
 
 function getBalance() {
@@ -277,39 +398,40 @@ function getBalance() {
 
 // 매개변수 transaction은 유효해야 함
 function getTransactionFee(transaction) {
-  const inputSum = transaction.inputs.reduce((acc, input) => {
-    return (
+  if (isCoinbaseTransaction(transaction)) return 0;
+
+  const inputSum = transaction.inputs.reduce(
+    (acc, input) =>
       acc +
       getTransactionOutput(input.previousTransactionHash, input.outputIndex)
-        .value
-    );
-  });
-
+        .value,
+    0
+  );
   const outputSum = transaction.outputs.reduce((acc, output) => {
     return acc + output.value;
-  });
-
+  }, 0);
   return inputSum - outputSum;
 }
 
 // 매개변수 transactions은 유효해야 함
-function getTotalTransactionFee(transactions) {
-  return transactions.reduce((acc, transaction) => {
-    return acc + getTransactionFee(transaction);
-  });
+export function getTotalTransactionFee(transactions) {
+  return transactions.reduce(
+    (acc, transaction) => acc + getTransactionFee(transaction),
+    0
+  );
 }
 
 // 해당 Transaction을 찾으면 그 Transaction을 반환하고, 못 찾으면 null을 반환한다. blockchain 참조
-export function getTransaction(transactionHash) {
+function getTransaction(transactionHash) {
   let tx;
-  return blockchain.some(block => {
+  return blockchain.some(block =>
     block.transactions.some(transaction => {
       if (getTransactionHash(transaction) === transactionHash) {
         tx = transaction;
         return true;
       }
-    });
-  })
+    })
+  )
     ? tx
     : null;
 }
@@ -321,7 +443,7 @@ export function getTransactionOutput(transactionHash, outputIndex) {
 }
 
 // 비순수함수
-export const replaceBlockchain = receivedBlockchain => {
+export function replaceBlockchain(receivedBlockchain) {
   // 수신된 블록체인이 유효하고, 자신의 블록체인보다 더 어려우면 교체된다.
   if (
     isValidBlockChain(receivedBlockchain) &&
@@ -334,7 +456,7 @@ export const replaceBlockchain = receivedBlockchain => {
     blockchain = receivedBlockchain;
     broadcastLatest();
   } else console.log('Received blockchain invalid');
-};
+}
 
 export default blockchain;
 

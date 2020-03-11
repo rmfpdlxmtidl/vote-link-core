@@ -1,13 +1,13 @@
 import GraphQLLong from 'graphql-type-long';
 import blockchain, {
-  UTXO,
   isValidBlockchain,
   isValidBlock,
+  isValidTransaction,
   generateBlock,
-  createTransaction
+  createTransaction,
+  isUTXO
 } from '../blockchain/blockchain';
 import wallet, { recipientWallet } from '../blockchain/wallet';
-import { isValidTransaction } from '../blockchain/transaction';
 
 const testTxPool = [];
 
@@ -39,7 +39,7 @@ const resolvers = {
       );
       if (!tx) return null;
       testTxPool.push(tx);
-      console.log(isValidTransaction(tx));
+      console.log('isValidTransaction(): ' + isValidTransaction(tx, isUTXO));
       return tx;
     }
   }

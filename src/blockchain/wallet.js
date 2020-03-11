@@ -1,8 +1,11 @@
 import CryptoJS from 'crypto-js';
 import { ec } from '../utils';
 
-const privateKey = ec.genKeyPair();
-const publicKey = privateKey.getPublic().encode('hex');
+const privateKey = ec
+  .genKeyPair()
+  .getPrivate()
+  .toString(16);
+const publicKey = getPublicKey(privateKey);
 const publicKeyHash = CryptoJS.SHA256(publicKey).toString();
 
 export const wallet = {
@@ -11,8 +14,11 @@ export const wallet = {
   publicKeyHash
 };
 
-const privateKey2 = ec.genKeyPair();
-const publicKey2 = privateKey2.getPublic().encode('hex');
+const privateKey2 = ec
+  .genKeyPair()
+  .getPrivate()
+  .toString(16);
+const publicKey2 = getPublicKey(privateKey2)
 const publicKeyHash2 = CryptoJS.SHA256(publicKey2).toString();
 
 export const recipientWallet = {
@@ -20,5 +26,12 @@ export const recipientWallet = {
   publicKey: publicKey2,
   publicKeyHash: publicKeyHash2
 };
+
+export function getPublicKey(privateKey) {
+  return ec
+    .keyFromPrivate(privateKey, 'hex')
+    .getPublic()
+    .encode('hex');
+}
 
 export default wallet;

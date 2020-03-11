@@ -1,5 +1,6 @@
 import CryptoJS from 'crypto-js';
 import { hexToBinary, hashRegExp } from '../utils';
+import blockchain from './blockchain';
 
 // 블록 생성 주기를 설정해준다. in seconds
 const BLOCK_GENERATION_INTERVAL = 10;
@@ -23,7 +24,7 @@ export function getBlockHash(blockHeader) {
 export function getMerkleRoot(transactions) {
   if (transactions.length === 0) return null;
 
-  const transactionHashes = transactions.map(transaction =>
+  let transactionHashes = transactions.map(transaction =>
     getTransactionHash(transaction)
   );
 
@@ -46,15 +47,15 @@ export function getMerkleRoot(transactions) {
   return transactionHashes[0];
 }
 
-// 해당 블록의 bits값을 반환한다. 순수함수
-export function getBits(block) {
-  if (block.id !== 0) {
-    if (block.id % BITS_ADJUSTMENT_INTERVAL === 0) {
-      const { timestamp, bits } = blockchain[
+// 해당 블록의 bits값을 반환한다. 외부 변수(blockchain) 참조
+export function getBits(id, timestamp) {
+  if (id !== 0) {
+    if (id % BITS_ADJUSTMENT_INTERVAL === 0) {
+      const { previousTimestamp, bits } = blockchain[
         blockchain.length - BITS_ADJUSTMENT_INTERVAL
       ]; // previousIntervalBlock
       const timeExpected = BLOCK_GENERATION_INTERVAL * BITS_ADJUSTMENT_INTERVAL;
-      const timeTaken = block.timestamp - timestamp; // 현재 블록과 이전 주기 블록의 timestamp 차이
+      const timeTaken = timestamp - previousTimestamp; // 현재 블록과 이전 주기 블록의 timestamp 차이
 
       if (timeTaken < timeExpected / 2) {
         return bits + 1;
@@ -64,10 +65,10 @@ export function getBits(block) {
         return bits;
       }
     } else {
-      return blockchain[block.id - 1].bits;
+      return blockchain[id - 1].bits;
     }
   } else {
-    return genesisBlock.bits;
+    return blockchain[0].bits;
   }
 }
 
@@ -122,8 +123,8 @@ export function getTransactionMessage(
 // 블록체인의 누적 난이도를 확인한다. 순수함수
 export function getBlockchainDifficulty(blockchain) {
   return blockchain
-    .map(block => block.difficulty)
-    .map(difficulty => Math.pow(2, difficulty))
+    .map(block => block.bits)
+    .map(bits => Math.pow(2, bits))
     .reduce((a, b) => a + b);
 }
 
@@ -184,11 +185,9 @@ function isValidBlockHeaderStructure(block) {
 // 순수함수
 function isValidBlockHash(hexBlockHash, bits) {
   //16진수 Hash 문자열을 2진수 문자열로 교체한다.
-  const binaryBlockHash = hexToBinary(hexBlockHash);
   //난이도 수만큼 0을 반복해 문자열을 생성한다.
-  const zeroPrefix = '0'.repeat(bits);
   //2진수 Hash 문자열 맨 앞에 0이 'bits'번 이상 나오는 지 확인한다.
-  return binaryBlockHash.startsWith(zeroPrefix);
+  return hexToBinary(hexBlockHash).startsWith('0'.repeat(bits));
 }
 
 // 순수함수
