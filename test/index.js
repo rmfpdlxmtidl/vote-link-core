@@ -1,5 +1,16 @@
 import blockTest from './blockTest';
 import transactionTest from './transactionTest';
+import blockchain, {
+  generateBlock,
+  createTransaction,
+  isValidBlockchain,
+  isValidBlock,
+  isValidTransaction,
+  isUTXO,
+  getUTXO,
+  getBalance
+} from '../src/blockchain/blockchain';
+import wallet, { recipientWallet } from '../src/blockchain/wallet';
 
 const genesisBlock = {
   id: 0,
@@ -174,9 +185,9 @@ const firstBlock = {
   ]
 };
 
-export const blockchain = [genesisBlock, firstBlock];
+export const blockchain_ = [genesisBlock, firstBlock];
 
-function fullTest() {
+function pureFunctionTest() {
   return (
     blockTest() &&
     blockTest() &&
@@ -189,4 +200,29 @@ function fullTest() {
   );
 }
 
-console.log('fullTest(): ' + fullTest());
+function blockchainTest() {
+  if (!isValidBlockchain(blockchain)) return false;
+
+  const txPool = [];
+  const tx = createTransaction(
+    wallet.privateKey,
+    recipientWallet.publicKeyHash,
+    10,
+    1,
+    'First transaction'
+  );
+
+  if (!tx) return false;
+  if (!isValidTransaction(tx, isUTXO)) return false;
+  txPool.push(tx);
+  generateBlock(txPool, wallet.publicKeyHash);
+
+  if (!isValidBlockchain(blockchain)) return false;
+  if (getBalance(getUTXO(wallet.publicKeyHash)) !== 90) return false;
+  if (getBalance(getUTXO(recipientWallet.publicKeyHash)) !== 10) return false;
+
+  return true;
+}
+
+console.log('pureFunctionTest(): ' + pureFunctionTest());
+console.log('blockchainTest(): ' + blockchainTest());

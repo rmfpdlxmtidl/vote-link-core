@@ -37,13 +37,15 @@ const typeDefs = gql`
   type Query {
     blockchain: [Block!]
     block(id: GraphQLLong!): Block
-    transactions: [Transaction!]
-    transaction(id: GraphQLLong!): Transaction
+    transactionPool: [Transaction!]
+    myBalance: GraphQLLong!
+    balance(publicKeyHash: String!): GraphQLLong!
   }
 
   type Mutation {
     generateBlock: Block
     createTransaction(
+      recipientPublicKeyHash: String!
       value: GraphQLLong!
       fee: GraphQLLong!
       memo: String

@@ -143,7 +143,7 @@ export function isValidBlockHeader(block, previousBlock) {
   }
   // 버전이 1인지
   if (block.version !== 1) {
-    console.log('isValidBlockHeader(): Version is not 1');
+    console.warn('isValidBlockHeader(): Version is not 1');
   }
   //  블록의 previousBLockHash와 이전 블록의 해시가 일치하는지
   if (getBlockHash(previousBlock) !== block.previousBlockHash) {

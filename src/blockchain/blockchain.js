@@ -24,7 +24,6 @@ function broadcastLatest() {
 
 export const blockchain = [generateGenesisBlock()];
 const transactionPool = [];
-export const UTXO = [];
 
 // 제네시스 블록을 생성. 비순수함수
 function generateGenesisBlock() {
@@ -53,14 +52,11 @@ function generateGenesisBlock() {
 }
 
 // 새로운 블록을 생성. 비순수함수
-export function generateBlock(transactions, minerPublicKeyHash) {
-  // @@ 블록에 넣은 transactions은 pop 필요
-  if (
-    !transactions.every(transaction => isValidTransaction(transaction, isUTXO))
-  ) {
-    console.warn('generateBlock(): Invalid transaction');
-    return null;
-  }
+// _transaction은 유효해야 한다. transactions 총 크기도 1MB 이하여야 한다.
+export function generateBlock(_transactions, minerPublicKeyHash) {
+  const transactions = _transactions.map(transaction =>
+    JSON.parse(JSON.stringify(transaction))
+  );
 
   const id = blockchain.length;
   transactions.unshift(
@@ -89,9 +85,8 @@ export function generateBlock(transactions, minerPublicKeyHash) {
     transactions
   };
   blockchain.push(newBlock);
+  _transactions.length = 0;
   broadcastLatest();
-
-  console.log(newBlock.transactions[0].outputs);
   return newBlock;
 }
 
@@ -104,28 +99,30 @@ export function createTransaction(
 ) {
   const senderPublicKey = getPublicKey(senderPrivateKey);
   const senderPublicKeyHash = CryptoJS.SHA256(senderPublicKey).toString();
+  const UTXO = getUTXO(senderPublicKeyHash);
 
   // 보유 금액 게산
-  updateUTXO(senderPublicKeyHash);
-  if (getBalance() < value + fee) {
+  if (getBalance(UTXO) < value + fee) {
     console.warn('createTransaction(): Not enough balance');
     return null;
   }
 
   const inputs = [];
   const outputs = [];
+
+  // 자신의 UTXO를 찾아 Input 계산
   let inputSum = 0;
   for (let i = UTXO.length - 1; i > -1; i--) {
     if (value + fee > inputSum) {
       inputs.push({
-        previousTransactionHash: UTXO[i].previousTransactionHash,
+        previousTransactionHash: UTXO[i].transactionHash,
         outputIndex: UTXO[i].outputIndex,
         signature: [UTXO[i].recipientPublicKeyHash],
         senderPublicKey
       });
       inputSum += UTXO[i].value;
       UTXO.pop();
-    } else break; // every함수 break
+    } else break;
   }
 
   // 여러 명의 수신인에게 금액 전송
@@ -220,24 +217,6 @@ export function isValidBlock(block) {
   return true;
 }
 
-// getTotalTransactionFee()거 외부 변수 참조
-function isValidCoinbaseTransaction(coinbaseTransaction, block) {
-  // 서명에 블록 높이가 써져있는지
-  if (coinbaseTransaction.inputs[0].signature[0] !== block.id) return false;
-  // 수수료 보상 유효성
-  if (
-    coinbaseTransaction.outputs[0].value !==
-    getCoinbaseBasicValue(block.id) + getTotalTransactionFee(block.transactions)
-  ) {
-    console.warn(
-      'isValidCoinbaseTransaction(): Invalid coinbase transaction output value'
-    );
-    return false;
-  }
-
-  return true;
-}
-
 // 일반 transaction만 검사할 수 있다. 비순수함수
 // isValidOutput은 isUTXO(), isSTXO() 둘 중 하나 넣어준다.
 // block은 해당 transaction이 담긴 블록을 넣어준다. 담긴 블록이 없으면 genesis block을 넣는다.
@@ -260,7 +239,7 @@ export function isValidTransaction(transaction, isTXO, block) {
       return false;
     } else return true;
   }
-  /*
+
   // Transaction의 input 검사
   let inputSum = 0;
   if (
@@ -324,7 +303,24 @@ export function isValidTransaction(transaction, isTXO, block) {
     console.warn('isValidTransaction(): Total input < Total output');
     return false;
   }
-  */
+
+  return true;
+}
+
+// getTotalTransactionFee()가 외부 변수 참조
+function isValidCoinbaseTransaction(coinbaseTransaction, block) {
+  // 서명에 블록 높이가 써져있는지
+  if (coinbaseTransaction.inputs[0].signature[0] !== block.id) return false;
+  // 수수료 보상 유효성
+  if (
+    coinbaseTransaction.outputs[0].value !==
+    getCoinbaseBasicValue(block.id) + getTotalTransactionFee(block.transactions)
+  ) {
+    console.warn(
+      'isValidCoinbaseTransaction(): Invalid coinbase transaction output value'
+    );
+    return false;
+  }
 
   return true;
 }
@@ -332,12 +328,12 @@ export function isValidTransaction(transaction, isTXO, block) {
 // 해당 output이 한번도 참조되지 않았으면 true를 반환하고, 그 외 false 반환한다.
 // 외부 변수(blockchain) 참조
 export function isUTXO(transactionHash, outputIndex) {
-  return blockchain.every(block =>
-    block.transactions.every(transaction =>
-      transaction.inputs.every(
+  return !blockchain.some(block =>
+    block.transactions.some(transaction =>
+      transaction.inputs.some(
         input =>
-          input.previousTransactionHash !== transactionHash &&
-          input.outputIndex !== outputIndex
+          input.previousTransactionHash === transactionHash &&
+          input.outputIndex === outputIndex
       )
     )
   );
@@ -366,34 +362,29 @@ function isSTXO(transactionHash, outputIndex) {
 }
 
 // UTXO를 갱신한다.
-function updateUTXO(recipientPublicKeyHash) {
-  UTXO.length = 0;
-  const blockchainLength = blockchain.length;
-  for (let i = 0; i < blockchainLength; i++) {
-    const transactions = blockchain[i].transactions;
-    const transactionsLength = transactions.length;
-    for (let j = 0; j < transactionsLength; j++) {
-      const outputs = transactions[j].outputs;
-      const outputsLength = outputs.length;
-      for (let k = 0; k < outputsLength; k++) {
+export function getUTXO(recipientPublicKeyHash) {
+  const UTXO = [];
+  blockchain.forEach(block => {
+    block.transactions.forEach(transaction => {
+      transaction.outputs.forEach((output, i) => {
         if (
-          outputs[k].recipientPublicKeyHash === recipientPublicKeyHash &&
-          isUTXO(getTransactionHash(transactions[j]), k)
+          output.recipientPublicKeyHash === recipientPublicKeyHash &&
+          isUTXO(getTransactionHash(transaction), i)
         )
           UTXO.push({
-            previousTransactionHash: getTransactionHash(transactions[j]),
-            outputIndex: k,
-            ...outputs[k]
+            transactionHash: getTransactionHash(transaction),
+            outputIndex: i,
+            ...output
           });
-      }
-    }
-  }
+      });
+    });
+  });
   // value 기준 오름차순 정렬
-  UTXO.sort((a, b) => a[value] - b[value]);
+  return UTXO.sort((a, b) => (a.value < b.value ? -1 : 1)); // a.value < b.value ? -1 : a.value > b.value ? 1 : 0
 }
 
-function getBalance() {
-  return UTXO.reduce((acc, utxo) => acc + utxo.value);
+export function getBalance(UTXO) {
+  return UTXO.reduce((acc, utxo) => acc + utxo.value, 0);
 }
 
 // 매개변수 transaction은 유효해야 함
@@ -414,7 +405,7 @@ function getTransactionFee(transaction) {
 }
 
 // 매개변수 transactions은 유효해야 함
-export function getTotalTransactionFee(transactions) {
+function getTotalTransactionFee(transactions) {
   return transactions.reduce(
     (acc, transaction) => acc + getTransactionFee(transaction),
     0

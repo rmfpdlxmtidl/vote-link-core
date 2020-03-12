@@ -8,21 +8,22 @@ import {
   getTransactionMessage,
   isValidBlockHeader
 } from '../src/blockchain/block';
-import { blockchain } from './index';
+import { blockchain_ } from './index';
 
 export function blockTest() {
-  console.log(getBlockHash(blockchain[0]));
-  console.log(getBlockchainDifficulty(blockchain));
-  console.log(getTransactionHash(blockchain[1].transactions[0]));
-  console.log(getBits(blockchain[0].id, blockchain[0].timestamp));
-  console.log(getBits(blockchain[1].id, blockchain[1].timestamp));
+  console.log(getBlockchainDifficulty(blockchain_));
   //console.log(getTransactionMessage(genesisBlock.transactions[0], ));
   return (
-    getMerkleRoot(blockchain[0].transactions) === blockchain[0].merkleRoot &&
-    getMerkleRoot(blockchain[1].transactions) === blockchain[1].merkleRoot &&
-    getNonce(blockchain[0]) === blockchain[0].nonce &&
-    getNonce(blockchain[1]) === blockchain[1].nonce &&
-    isValidBlockHeader(blockchain[1], blockchain[0])
+    getBlockHash(blockchain_[0]) === blockchain_[1].previousBlockHash &&
+    getMerkleRoot(blockchain_[0].transactions) === blockchain_[0].merkleRoot &&
+    getMerkleRoot(blockchain_[1].transactions) === blockchain_[1].merkleRoot &&
+    getBits(blockchain_[0].id, blockchain_[0].timestamp) === blockchain_[0].bits &&
+    getBits(blockchain_[1].id, blockchain_[1].timestamp) === blockchain_[1].bits &&
+    getNonce(blockchain_[0]) === blockchain_[0].nonce &&
+    getNonce(blockchain_[1]) === blockchain_[1].nonce &&
+    getTransactionHash(blockchain_[0].transactions[0]) ===
+      blockchain_[0].merkleRoot &&
+    isValidBlockHeader(blockchain_[1], blockchain_[0])
   );
 }
 

@@ -4,7 +4,7 @@ import {
   isValidTransactionStructure,
   isCoinbaseTransaction
 } from '../src/blockchain/transaction';
-import { blockchain } from './index';
+import { blockchain_ } from './index';
 
 export function transactionTest() {
   const coinbaseTransaction = getCoinbaseTransaction(
@@ -24,19 +24,19 @@ export function transactionTest() {
   coinbaseTransaction2.timestamp = 1583842481997;
 
   return (
-    getCoinbaseBasicValue(blockchain[0].id) ===
-      blockchain[0].transactions[0].outputs[0].value &&
-    getCoinbaseBasicValue(blockchain[1].id) + 1 ===
-      blockchain[1].transactions[0].outputs[0].value &&
+    getCoinbaseBasicValue(blockchain_[0].id) ===
+      blockchain_[0].transactions[0].outputs[0].value &&
+    getCoinbaseBasicValue(blockchain_[1].id) + 1 ===
+      blockchain_[1].transactions[0].outputs[0].value &&
     JSON.stringify(coinbaseTransaction) ===
-      JSON.stringify(blockchain[0].transactions[0]) &&
+      JSON.stringify(blockchain_[0].transactions[0]) &&
     JSON.stringify(coinbaseTransaction2) ===
-      JSON.stringify(blockchain[1].transactions[0]) &&
-    isValidTransactionStructure(blockchain[0].transactions[0]) &&
-    isValidTransactionStructure(blockchain[1].transactions[0]) &&
-    isValidTransactionStructure(blockchain[1].transactions[1]) &&
-    isCoinbaseTransaction(blockchain[0].transactions[0]) &&
-    isCoinbaseTransaction(blockchain[1].transactions[0])
+      JSON.stringify(blockchain_[1].transactions[0]) &&
+    isValidTransactionStructure(blockchain_[0].transactions[0]) &&
+    isValidTransactionStructure(blockchain_[1].transactions[0]) &&
+    isValidTransactionStructure(blockchain_[1].transactions[1]) &&
+    isCoinbaseTransaction(blockchain_[0].transactions[0]) &&
+    isCoinbaseTransaction(blockchain_[1].transactions[0])
   );
 }
 

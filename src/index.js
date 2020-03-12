@@ -1,6 +1,6 @@
 import { ApolloServer } from 'apollo-server';
-import resolvers from './graphql/resolvers';
 import typeDefs from './graphql/typeDefs';
+import resolvers from './graphql/resolvers';
 //import context from './graphql/context';
 
 // ApolloServer는 스키마와 리졸버가 반드시 필요함

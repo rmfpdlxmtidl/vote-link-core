@@ -1,45 +1,50 @@
 import GraphQLLong from 'graphql-type-long';
 import blockchain, {
+  generateBlock,
+  createTransaction,
   isValidBlockchain,
   isValidBlock,
   isValidTransaction,
-  generateBlock,
-  createTransaction,
-  isUTXO
+  isUTXO,
+  getUTXO,
+  getBalance
 } from '../blockchain/blockchain';
 import wallet, { recipientWallet } from '../blockchain/wallet';
 
-const testTxPool = [];
+const transactionPool = [];
 
 const resolvers = {
   GraphQLLong,
   Query: {
-    blockchain: () => {
-      if (isValidBlockchain(blockchain)) return blockchain;
-      else return null;
+    blockchain: () => (isValidBlockchain(blockchain) ? blockchain : null),
+    block: (_, { id }) =>
+      isValidBlock(blockchain[id]) ? blockchain[id] : null,
+    transactionPool: () =>
+      transactionPool.every(tx => isValidTransaction(tx, isUTXO))
+        ? transactionPool
+        : null,
+    myBalance: () => {
+      return getBalance(getUTXO(wallet.publicKeyHash));
     },
-    block: (_, { id }) => {
-      if (isValidBlock(blockchain[id])) return blockchain[id];
-      else return null;
-    },
-    transactions: () => {},
-    transaction: (_, { id }) => {}
+    balance: (_, { publicKeyHash }) => {
+      return getBalance(getUTXO(recipientWallet.publicKeyHash)); // publicKeyHash로 수정 필요
+    }
   },
   Mutation: {
-    generateBlock: () => {
-      return generateBlock(testTxPool, wallet.publicKeyHash);
-    },
-    createTransaction: (_, { value, fee, memo }) => {
+    generateBlock: () =>
+      transactionPool.every(tx => isValidTransaction(tx, isUTXO))
+        ? generateBlock(transactionPool, wallet.publicKeyHash)
+        : null,
+    createTransaction: (_, { recipientPublicKeyHash, value, fee, memo }) => {
       const tx = createTransaction(
         wallet.privateKey,
-        recipientWallet.publicKeyHash,
+        recipientWallet.publicKeyHash, // recipientPublicKeyHash로 수정 필요
         value,
         fee,
         memo
       );
-      if (!tx) return null;
-      testTxPool.push(tx);
-      console.log('isValidTransaction(): ' + isValidTransaction(tx, isUTXO));
+      if (!tx || !isValidTransaction(tx, isUTXO)) return null;
+      transactionPool.push(tx);
       return tx;
     }
   }
