@@ -23,12 +23,9 @@ const resolvers = {
       transactionPool.every(tx => isValidTransaction(tx, isUTXO))
         ? transactionPool
         : null,
-    myBalance: () => {
-      return getBalance(getUTXO(wallet.publicKeyHash));
-    },
-    balance: (_, { publicKeyHash }) => {
-      return getBalance(getUTXO(recipientWallet.publicKeyHash)); // publicKeyHash로 수정 필요
-    }
+    myBalance: () => getBalance(getUTXO(wallet.publicKeyHash)),
+    balance: (_, { publicKeyHash }) =>
+      getBalance(getUTXO(recipientWallet.publicKeyHash)) // publicKeyHash로 수정 필요
   },
   Mutation: {
     generateBlock: () =>
