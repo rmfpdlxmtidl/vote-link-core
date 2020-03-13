@@ -211,7 +211,6 @@ function blockchainTest() {
     1,
     'First transaction'
   );
-
   if (!tx) return false;
   if (!isValidTransaction(tx, isUTXO)) return false;
   txPool.push(tx);
