@@ -1,6 +1,8 @@
 import {
   getCoinbaseTransaction,
   getCoinbaseBasicValue,
+  getTransactionHash,
+  getTransactionMessage,
   isValidTransactionStructure,
   isCoinbaseTransaction
 } from '../src/blockchain/transaction';
@@ -28,6 +30,8 @@ export function transactionTest() {
       blockchain_[0].transactions[0].outputs[0].value &&
     getCoinbaseBasicValue(blockchain_[1].id) + 1 ===
       blockchain_[1].transactions[0].outputs[0].value &&
+    getTransactionHash(blockchain_[0].transactions[0]) ===
+      blockchain_[0].merkleRoot &&
     JSON.stringify(coinbaseTransaction) ===
       JSON.stringify(blockchain_[0].transactions[0]) &&
     JSON.stringify(coinbaseTransaction2) ===

@@ -1,4 +1,5 @@
-import { hashRegExp, publicPointRegExp } from '../utils';
+import CryptoJS from 'crypto-js';
+import { hashRegExp, publicPointRegExp, getStringSize } from '../utils';
 
 // coinbase transaction을 반환한다. 순수함수
 export function getCoinbaseTransaction(
@@ -31,6 +32,58 @@ export function getCoinbaseTransaction(
 // 반감기에 따른 coinbase 보상을 반환한다. 순수함수
 export function getCoinbaseBasicValue(blockID) {
   return 50 / Math.pow(2, Math.floor(blockID / 210000));
+}
+
+// Transaction의 해시값을 구한다. 순수함수
+export function getTransactionHash({ version, inputs, outputs, timestamp }) {
+  const inputsData = inputs.map(
+    input => input.previousTransactionHash + input.outputIndex + input.signature
+  );
+
+  const outputsData = outputs.map(
+    output => output.recipientPublicKeyHash + output.value
+  );
+
+  return CryptoJS.SHA256(
+    version + inputsData.join('') + outputsData.join('') + timestamp
+  ).toString();
+}
+
+// Transaction의 서명에 필요한 해시값을 구한다. 순수함수
+export function getTransactionMessage(
+  { version, inputs, outputs, timestamp },
+  previousTransactionOutputRecipientPublicKeyHash
+) {
+  const inputsData = inputs.map(
+    input =>
+      input.previousTransactionHash +
+      input.outputIndex +
+      previousTransactionOutputRecipientPublicKeyHash
+  );
+
+  const outputsData = outputs.map(
+    output => output.recipientPublicKeyHash + output.value
+  );
+
+  return CryptoJS.SHA256(
+    version + inputsData.join('') + outputsData.join('') + timestamp
+  ).toString();
+}
+
+export function getTransactionSize(transaction) {
+  const inputSize = transaction.inputs.reduce(
+    (acc, input) => acc + 32 + 4 + input.signature.length + 65
+  );
+  return (
+    4 + // version
+    8 + // timestamp
+    transaction.inputs.reduce(
+      (acc, input) => acc + 32 + 4 + input.signature.length + 65,
+      0
+    ) +
+    transaction.outputs.length * 40 +
+    getStringSize(transaction.memo)
+  );
 }
 
 // 해당 tx가 coinbase tx인지 확인한다. 순수함수

@@ -4,14 +4,16 @@ import blockchain, {
   createTransaction,
   isValidBlockchain,
   isValidBlock,
-  isValidTransaction,
-  isUTXO,
+  isValidTransactionPool,
   getUTXO,
-  getBalance
+  getBalance,
+  extractValidTransactions,
+  addTransactionToPool,
+  replaceBlockchain
 } from '../blockchain/blockchain';
-import wallet, { recipientWallet } from '../blockchain/wallet';
+import wallet from '../blockchain/wallet';
 
-const transactionPool = [];
+export const txPool = [];
 
 const resolvers = {
   GraphQLLong,
@@ -19,31 +21,38 @@ const resolvers = {
     blockchain: () => (isValidBlockchain(blockchain) ? blockchain : null),
     block: (_, { id }) =>
       isValidBlock(blockchain[id]) ? blockchain[id] : null,
-    transactionPool: () =>
-      transactionPool.every(tx => isValidTransaction(tx, isUTXO))
-        ? transactionPool
-        : null,
+    transactionPool: () => (isValidTransactionPool(txPool) ? txPool : null),
     myBalance: () => getBalance(getUTXO(wallet.publicKeyHash)),
-    balance: (_, { publicKeyHash }) =>
-      getBalance(getUTXO(recipientWallet.publicKeyHash)) // publicKeyHash로 수정 필요
+    balance: (_, { publicKeyHash }) => getBalance(getUTXO(publicKeyHash))
   },
   Mutation: {
-    generateBlock: () =>
-      transactionPool.every(tx => isValidTransaction(tx, isUTXO))
-        ? generateBlock(transactionPool, wallet.publicKeyHash)
-        : null,
+    generateBlock: () => {
+      const block = generateBlock(
+        extractValidTransactions(txPool),
+        wallet.publicKeyHash
+      );
+      return isValidBlock(block) ? block : null;
+    },
     createTransaction: (_, { recipientPublicKeyHash, value, fee, memo }) => {
       const tx = createTransaction(
         wallet.privateKey,
-        recipientWallet.publicKeyHash, // recipientPublicKeyHash로 수정 필요
+        recipientPublicKeyHash,
         value,
         fee,
         memo
       );
-      if (!tx || !isValidTransaction(tx, isUTXO)) return null;
-      transactionPool.push(tx);
-      return tx;
-    }
+      return addTransactionToPool(tx, txPool) ? tx : null;
+    },
+    receiveBlockchain: (_, { blockchain }) =>
+      replaceBlockchain(JSON.parse(blockchain)),
+    receiveBlock: (_, { block }) => {
+      const b = JSON.parse(block);
+      if (!isValidBlock(b)) return false;
+      blockchain.push(b);
+      return true;
+    },
+    receiveTransaction: (_, { transaction }) =>
+      addTransactionToPool(JSON.parse(transaction), txPool)
   }
 };
 

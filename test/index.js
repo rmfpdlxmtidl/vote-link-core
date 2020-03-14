@@ -1,16 +1,20 @@
+import CryptoJS from 'crypto-js';
 import blockTest from './blockTest';
 import transactionTest from './transactionTest';
 import blockchain, {
   generateBlock,
   createTransaction,
+  extractValidTransactions,
+  addTransactionToPool,
   isValidBlockchain,
-  isValidBlock,
   isValidTransaction,
   isUTXO,
   getUTXO,
-  getBalance
+  getBalance,
+  isValidTransactionPool
 } from '../src/blockchain/blockchain';
 import wallet, { recipientWallet } from '../src/blockchain/wallet';
+import resolver, { txPool } from '../src/graphql/resolvers';
 
 const genesisBlock = {
   id: 0,
@@ -201,27 +205,72 @@ function pureFunctionTest() {
 }
 
 function blockchainTest() {
-  if (!isValidBlockchain(blockchain)) return false;
+  if (!resolver.Query.blockchain()) return false;
 
-  const txPool = [];
-  const tx = createTransaction(
-    wallet.privateKey,
-    recipientWallet.publicKeyHash,
-    10,
-    1,
-    'First transaction'
-  );
+  const tx = resolver.Mutation.createTransaction(null, {
+    recipientPublicKeyHash: recipientWallet.publicKeyHash,
+    value: 10,
+    fee: 1,
+    memo: 'First transaction'
+  });
   if (!tx) return false;
-  if (!isValidTransaction(tx, isUTXO)) return false;
-  txPool.push(tx);
-  generateBlock(txPool, wallet.publicKeyHash);
+  if (!resolver.Mutation.generateBlock()) return false;
 
-  if (!isValidBlockchain(blockchain)) return false;
-  if (getBalance(getUTXO(wallet.publicKeyHash)) !== 90) return false;
-  if (getBalance(getUTXO(recipientWallet.publicKeyHash)) !== 10) return false;
+  if (!resolver.Query.blockchain()) return false;
+  if (resolver.Query.myBalance() !== 90) return false;
+  if (
+    resolver.Query.balance(null, {
+      publicKeyHash: recipientWallet.publicKeyHash
+    }) !== 10
+  )
+    return false;
 
+  const tx2 = resolver.Mutation.createTransaction('', {
+    recipientPublicKeyHash: recipientWallet.publicKeyHash,
+    value: 10,
+    fee: 1,
+    memo: 'Second transaction'
+  });
+  if (!tx2) return false;
+
+  const tx3 = createTransaction(
+    recipientWallet.privateKey,
+    wallet.publicKeyHash,
+    5,
+    5,
+    'Third transaction'
+  );
+  if (!addTransactionToPool(tx3, txPool)) return false;
+
+  const tx4 = createTransaction(
+    recipientWallet.privateKey,
+    wallet.publicKeyHash,
+    10,
+    5,
+    'Fourth transaction'
+  );
+  if (tx4) return false; // 잔액 부족 테스트
+  
+  if (addTransactionToPool(tx, txPool)) return false; // STXO를 참조하는 tx가 txPool에 포함되는지 테스트
+  if (addTransactionToPool(tx3, txPool)) return false; // UTXO를 참조하지만 이중 지불인 tx가 txPool에 포함되는지 테스트
+  if (!resolver.Query.transactionPool()) return false;
+  generateBlock(
+    extractValidTransactions(txPool),
+    recipientWallet.publicKeyHash
+  );
+
+  if (!resolver.Query.blockchain()) return false;
+  if (resolver.Query.myBalance() !== 84) return false;
+  if (
+    resolver.Query.balance(null, {
+      publicKeyHash: recipientWallet.publicKeyHash
+    }) !== 66
+  )
+    return false;
   return true;
 }
 
-console.log('pureFunctionTest(): ' + pureFunctionTest());
-console.log('blockchainTest(): ' + blockchainTest());
+console.log('pureFunctionTest():');
+console.log(pureFunctionTest());
+console.log('blockchainTest():');
+console.log(blockchainTest());

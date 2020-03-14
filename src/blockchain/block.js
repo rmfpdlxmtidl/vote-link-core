@@ -1,5 +1,6 @@
 import CryptoJS from 'crypto-js';
 import { hexToBinary, hashRegExp } from '../utils';
+import { getTransactionHash } from './transaction';
 import blockchain from './blockchain';
 
 // 블록 생성 주기를 설정해준다. in seconds
@@ -72,52 +73,15 @@ export function getBits(id, timestamp) {
   }
 }
 
-// 해당 블록의 nonce값을 계산해서 반환한다. 순수함수
+// 해당 블록의 nonce값을 계산해서 반환한다. 부수 효과 있음.
 export function getNonce(blockHeader) {
-  const tempBlockHeader = blockHeader;
-  tempBlockHeader.nonce = 0;
+  blockHeader.nonce = 0;
   while (true) {
     const blockHash = getBlockHash(blockHeader);
-    if (isValidBlockHash(blockHash, tempBlockHeader.bits))
-      return tempBlockHeader.nonce;
-    tempBlockHeader.nonce++;
+    if (isValidBlockHash(blockHash, blockHeader.bits))
+      return blockHeader.nonce;
+    blockHeader.nonce++;
   }
-}
-
-// Transaction의 해시값을 구한다. 순수함수
-export function getTransactionHash({ version, inputs, outputs, timestamp }) {
-  const inputsData = inputs.map(
-    input => input.previousTransactionHash + input.outputIndex + input.signature
-  );
-
-  const outputsData = outputs.map(
-    output => output.recipientPublicKeyHash + output.value
-  );
-
-  return CryptoJS.SHA256(
-    version + inputsData.join('') + outputsData.join('') + timestamp
-  ).toString();
-}
-
-//
-export function getTransactionMessage(
-  { version, inputs, outputs, timestamp },
-  previousTransactionOutputRecipientPublicKeyHash
-) {
-  const inputsData = inputs.map(
-    input =>
-      input.previousTransactionHash +
-      input.outputIndex +
-      previousTransactionOutputRecipientPublicKeyHash
-  );
-
-  const outputsData = outputs.map(
-    output => output.recipientPublicKeyHash + output.value
-  );
-
-  return CryptoJS.SHA256(
-    version + inputsData.join('') + outputsData.join('') + timestamp
-  ).toString();
 }
 
 // 블록체인의 누적 난이도를 확인한다. 순수함수
