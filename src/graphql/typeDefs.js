@@ -48,9 +48,9 @@ const typeDefs = gql`
   type Mutation {
     generateBlock: Block
     createTransaction(
-      recipientPublicKeyHash: [String!]!
-      value: [GraphQLLong!]!
-      fee: GraphQLLong!
+      recipientPublicKeyHash: [String!]
+      value: [GraphQLLong!]
+      fee: [GraphQLLong!]
       memo: String
     ): Transaction
     receiveBlockchain(blockchain: String!): Boolean!

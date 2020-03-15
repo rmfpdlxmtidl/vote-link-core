@@ -11,7 +11,7 @@ import blockchain, {
   addTransactionToPool,
   replaceBlockchain
 } from '../blockchain/blockchain';
-import wallet from '../blockchain/wallet';
+import wallet, { recipientWallet } from '../blockchain/wallet';
 
 export const txPool = [];
 

@@ -208,20 +208,23 @@ function blockchainTest() {
   if (!resolver.Query.blockchain()) return false;
 
   const tx = resolver.Mutation.createTransaction(null, {
-    recipientPublicKeyHash: recipientWallet.publicKeyHash,
-    value: 10,
-    fee: 1,
+    recipientPublicKeyHash: [
+      recipientWallet.publicKeyHash,
+      recipientWallet.publicKeyHash
+    ],
+    value: [10, 20],
+    fee: [1, 2],
     memo: 'First transaction'
   });
   if (!tx) return false;
   if (!resolver.Mutation.generateBlock()) return false;
 
   if (!resolver.Query.blockchain()) return false;
-  if (resolver.Query.myBalance() !== 90) return false;
+  if (resolver.Query.myBalance() !== 70) return false;
   if (
     resolver.Query.balance(null, {
       publicKeyHash: recipientWallet.publicKeyHash
-    }) !== 10
+    }) !== 30
   )
     return false;
 
@@ -245,12 +248,12 @@ function blockchainTest() {
   const tx4 = createTransaction(
     recipientWallet.privateKey,
     wallet.publicKeyHash,
-    10,
+    40,
     5,
     'Fourth transaction'
   );
   if (tx4) return false; // 잔액 부족 테스트
-  
+
   if (addTransactionToPool(tx, txPool)) return false; // STXO를 참조하는 tx가 txPool에 포함되는지 테스트
   if (addTransactionToPool(tx3, txPool)) return false; // UTXO를 참조하지만 이중 지불인 tx가 txPool에 포함되는지 테스트
   if (!resolver.Query.transactionPool()) return false;
@@ -260,11 +263,11 @@ function blockchainTest() {
   );
 
   if (!resolver.Query.blockchain()) return false;
-  if (resolver.Query.myBalance() !== 84) return false;
+  if (resolver.Query.myBalance() !== 64) return false;
   if (
     resolver.Query.balance(null, {
       publicKeyHash: recipientWallet.publicKeyHash
-    }) !== 66
+    }) !== 86
   )
     return false;
   return true;

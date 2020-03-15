@@ -17,13 +17,12 @@ import {
   isCoinbaseTransaction
 } from './transaction';
 import wallet, { getPublicKey } from './wallet';
-import { ec } from '../utils';
+import { ec, hashRegExp } from '../utils';
 
 // 블록에 포함되는 transactions 배열의 최대 바이트 크기(1MB)
 const MAX_TRANSACTIONS_SIZE = 1024 * 1024;
 
 export let blockchain = [generateGenesisBlock()];
-const transactionPool = [];
 
 // 제네시스 블록을 생성. 부수 효과 있음.
 function generateGenesisBlock() {
@@ -95,23 +94,46 @@ export function createTransaction(
   fee,
   memo
 ) {
+  // 보유 금액 게산
+  let value_;
+  let fee_;
+  if (
+    typeof recipientPublicKeyHash === 'object' &&
+    typeof value === 'object' &&
+    typeof fee === 'object' &&
+    recipientPublicKeyHash.length === value.length &&
+    value.length === fee.length
+  ) {
+    value_ = value.reduce((acc, v) => acc + v);
+    fee_ = fee.reduce((acc, f) => acc + f);
+  } else if (
+    hashRegExp.test(recipientPublicKeyHash) &&
+    Number.isInteger(value) &&
+    Number.isInteger(fee)
+  ) {
+    value_ = value;
+    fee_ = fee;
+  } else {
+    console.warn(
+      'createTransaction(): Invalid recipient public key hash, value or fee'
+    );
+    return null;
+  }
+
+  // 자신의 잔액 조회
   const senderPublicKey = getPublicKey(senderPrivateKey);
   const senderPublicKeyHash = CryptoJS.SHA256(senderPublicKey).toString();
   const UTXO = getUTXO(senderPublicKeyHash);
-
-  // 보유 금액 게산
-  if (getBalance(UTXO) < value + fee) {
+  if (getBalance(UTXO) < value_ + fee_) {
     console.warn('createTransaction(): Not enough balance');
     return null;
   }
 
+  // 자신의 UTXO로부터 Input을 생성
   const inputs = [];
-  const outputs = [];
-
-  // 자신의 UTXO를 찾아 Input 계산
   let inputSum = 0;
   for (let i = UTXO.length - 1; i > -1; i--) {
-    if (value + fee > inputSum) {
+    if (value_ + fee_ > inputSum) {
       inputs.push({
         previousTransactionHash: UTXO[i].transactionHash,
         outputIndex: UTXO[i].outputIndex,
@@ -123,38 +145,29 @@ export function createTransaction(
     } else break;
   }
 
-  // 여러 명의 수신인에게 금액 전송
+  // Output 생성
+  const outputs = [];
   if (
     typeof recipientPublicKeyHash === 'object' &&
     typeof value === 'object' &&
-    recipientPublicKeyHash.length === value.length
+    typeof fee === 'object' &&
+    recipientPublicKeyHash.length === value.length &&
+    value.length === fee.length
   ) {
     for (let i = 0; i < value.length; i++)
       outputs.push({
         recipientPublicKeyHash: recipientPublicKeyHash[i],
         value: value[i]
       });
-  }
-  // 1명의 수신인에게 금액 전송
-  else if (
-    typeof recipientPublicKeyHash === 'string' &&
-    typeof value === 'number'
-  ) {
+  } else {
     outputs.push({ recipientPublicKeyHash, value });
-  }
-  // 그 외
-  else {
-    console.warn(
-      'createTransaction(): Invalid recipient public key hash or value'
-    );
-    return null;
   }
 
   // 거스름돈 계산
-  if (value + fee != inputSum) {
+  if (inputSum != value_ + fee_) {
     outputs.push({
       recipientPublicKeyHash: senderPublicKeyHash,
-      value: inputSum - value - fee
+      value: inputSum - value_ - fee_
     });
   }
 
@@ -236,21 +249,23 @@ export function addTransactionToPool(tx, txPool) {
 
 // 부수 효과 있음.
 export function replaceBlockchain(receivedBlockchain) {
-  // 수신된 블록체인이 유효하고, 자신의 블록체인보다 더 어려우면 교체된다.
-  if (
-    isValidBlockchain(receivedBlockchain) &&
-    getBlockchainDifficulty(receivedBlockchain) >
-      getBlockchainDifficulty(blockchain)
-  ) {
-    console.log(
-      'Received blockchain is valid. Replacing current blockchain with received blockchain'
-    );
-    blockchain = receivedBlockchain;
-    return true;
-  } else {
-    console.log('Received blockchain invalid');
+  // 수신된 블록체인 유효성 검사.
+  if (!isValidBlockchain(receivedBlockchain)) {
+    console.warn('Received blockchain invalid');
     return false;
   }
+  // 수신된 블록체인 난이도 검사
+  if (
+    getBlockchainDifficulty(receivedBlockchain) <=
+    getBlockchainDifficulty(blockchain)
+  ) {
+    console.log('Received blockchain is easier than current blockchain');
+    return false;
+  }
+  console.log('Received blockchain is valid.');
+  console.log('Replacing current blockchain with received blockchain');
+  blockchain = receivedBlockchain;
+  return true;
 }
 
 // 블록체인이 유효한지 검증한다. 외부 변수(genesisBlock) 참조
