@@ -7,6 +7,7 @@ import blockchain, {
   isValidTransactionPool,
   getUTXO,
   getBalance,
+  getPublicKeyHashList,
   extractValidTransactions,
   addTransactionToPool,
   replaceBlockchain
@@ -23,7 +24,9 @@ const resolvers = {
       isValidBlock(blockchain[id]) ? blockchain[id] : null,
     transactionPool: () => (isValidTransactionPool(txPool) ? txPool : null),
     myBalance: () => getBalance(getUTXO(wallet.publicKeyHash)),
-    balance: (_, { publicKeyHash }) => getBalance(getUTXO(publicKeyHash))
+    balance: (_, { publicKeyHash }) => getBalance(getUTXO(publicKeyHash)),
+    users: () => [recipientWallet.publicKeyHash, ...getPublicKeyHashList()],
+    me: () => wallet.publicKeyHash
   },
   Mutation: {
     generateBlock: () => {

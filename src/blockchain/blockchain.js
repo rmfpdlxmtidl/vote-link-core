@@ -480,6 +480,19 @@ export function getBalance(UTXO) {
   return UTXO.reduce((acc, utxo) => acc + utxo.value, 0);
 }
 
+export function getPublicKeyHashList() {
+  const publicKeyHashes = [];
+  blockchain.forEach(block => {
+    block.transactions.forEach(transaction => {
+      transaction.outputs.forEach(output => {
+        if (!publicKeyHashes.includes(output.recipientPublicKeyHash))
+          publicKeyHashes.push(output.recipientPublicKeyHash);
+      });
+    });
+  });
+  return publicKeyHashes;
+}
+
 // 매개변수 transaction은 유효해야 함
 function getTransactionFee(transaction) {
   if (isCoinbaseTransaction(transaction)) return 0; // transaction이 coinbase일 수도 있어서 필요함.

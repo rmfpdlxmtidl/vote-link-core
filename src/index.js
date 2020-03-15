@@ -7,10 +7,9 @@ import resolvers from './graphql/resolvers';
 const server = new ApolloServer({
   typeDefs,
   resolvers,
-
+  //context
   introspection: true,
   playground: true
-  //context
 });
 
 // listen 함수로 웹 서버 실행
