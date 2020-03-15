@@ -6,7 +6,10 @@ import resolvers from './graphql/resolvers';
 // ApolloServer는 스키마와 리졸버가 반드시 필요함
 const server = new ApolloServer({
   typeDefs,
-  resolvers
+  resolvers,
+
+  introspection: true,
+  playground: true
   //context
 });
 
