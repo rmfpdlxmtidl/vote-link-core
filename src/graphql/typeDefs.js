@@ -58,6 +58,7 @@ const typeDefs = gql`
     receiveBlockchain(blockchain: String!): Boolean!
     receiveBlock(block: String!): Boolean!
     receiveTransaction(transaction: String!): Boolean!
+    addPeer(peer: String!): Boolean!
   }
 `;
 
