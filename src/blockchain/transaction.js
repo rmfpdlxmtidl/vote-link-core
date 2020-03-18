@@ -100,7 +100,7 @@ export function isCoinbaseTransaction(transaction) {
 // Transaction의 형태를 검사한다. 순수함수
 export function isValidTransactionStructure(transaction) {
   return (
-    Number.isInteger(transaction.version) &&
+    transaction.version === 1 &&
     Number.isInteger(transaction.timestamp) &&
     typeof transaction.memo === 'string' &&
     typeof transaction.inputs === 'object' &&

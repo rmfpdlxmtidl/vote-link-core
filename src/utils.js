@@ -3,6 +3,7 @@ import ecdsa from 'elliptic';
 export const ec = new ecdsa.ec('secp256k1');
 export const hashRegExp = /[0-9A-Fa-f]{64}/;
 export const publicPointRegExp = /[0-9A-Fa-f]{130}/;
+export const urlRegExp = /\b((http|https):\/\/?)[^\s()<>]+(?:\([\w\d]+\)|([^[:punct:]\s]|\/?))/;
 
 export function hexToBinary(s) {
   const result = [];

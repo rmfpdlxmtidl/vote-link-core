@@ -1,40 +1,58 @@
 import GraphQLLong from 'graphql-type-long';
 import blockchain, {
+  validTxPool,
   generateBlock,
+  addBlockToBlockchain,
   createTransaction,
+  replaceBlockchain,
+  addTransactionToPool,
+  extractValidTransactions,
+  rearrangeTransactionPool,
   isValidBlockchain,
   isValidBlock,
+  isValidTransaction,
   isValidTransactionPool,
   getUTXO,
   getBalance,
   getPublicKeyHashList,
-  extractValidTransactions,
-  addTransactionToPool,
-  replaceBlockchain
+  getTransaction
 } from '../blockchain/blockchain';
+import { getBlockHash } from '../blockchain/block';
 import wallet, { recipientWallet } from '../blockchain/wallet';
-
-export const txPool = [];
+import { addPeer } from './broadcast';
 
 const resolvers = {
   GraphQLLong,
   Query: {
     blockchain: () => (isValidBlockchain(blockchain) ? blockchain : null),
-    block: (_, { id }) =>
+    block: (_, { blockHash }) => {
+      const block = blockchain.find(block => getBlockHash(block) === blockHash);
+      return isValidBlock(block) ? block : null;
+    },
+    blockByID: (_, { id }) =>
       isValidBlock(blockchain[id]) ? blockchain[id] : null,
-    transactionPool: () => (isValidTransactionPool(txPool) ? txPool : null),
-    myBalance: () => getBalance(getUTXO(wallet.publicKeyHash)),
+    transactionPool: () =>
+      isValidTransactionPool(validTxPool)
+        ? { validTxPool, orphanTxPool }
+        : null,
+    transaction: (_, { transactionHash }) => {
+      const tx = getTransaction(transactionHash);
+      return isValidTransaction(tx) ? tx : null;
+    },
     balance: (_, { publicKeyHash }) => getBalance(getUTXO(publicKeyHash)),
-    users: () => [recipientWallet.publicKeyHash, ...getPublicKeyHashList()],
+    myBalance: () => getBalance(getUTXO(wallet.publicKeyHash)),
+    users: () => [recipientWallet.publicKeyHash, ...getPublicKeyHashList()], // recipientWallet.publicKeyHash는 테스트용
     me: () => wallet.publicKeyHash
   },
   Mutation: {
     generateBlock: () => {
       const block = generateBlock(
-        extractValidTransactions(txPool),
+        extractValidTransactions(),
         wallet.publicKeyHash
       );
-      return isValidBlock(block) ? block : null;
+      if (!addBlockToBlockchain(block)) return null;
+      rearrangeTransactionPool();
+      return block;
     },
     createTransaction: (_, { recipientPublicKeyHash, value, fee, memo }) => {
       const tx = createTransaction(
@@ -44,18 +62,16 @@ const resolvers = {
         fee,
         memo
       );
-      return addTransactionToPool(tx, txPool) ? tx : null;
+      return addTransactionToPool(tx) ? tx : null;
     },
+
     receiveBlockchain: (_, { blockchain }) =>
       replaceBlockchain(JSON.parse(blockchain)),
-    receiveBlock: (_, { block }) => {
-      const b = JSON.parse(block);
-      if (!isValidBlock(b)) return false;
-      blockchain.push(b);
-      return true;
-    },
+
+    receiveBlock: (_, { block }) => addBlockToBlockchain(JSON.parse(block)),
     receiveTransaction: (_, { transaction }) =>
-      addTransactionToPool(JSON.parse(transaction), txPool)
+      addTransactionToPool(JSON.parse(transaction)),
+    addPeer: (_, { url }) => addPeer(url)
   }
 };
 

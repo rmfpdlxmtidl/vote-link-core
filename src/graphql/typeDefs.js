@@ -37,10 +37,17 @@ const typeDefs = gql`
     value: GraphQLLong!
   }
 
+  type TransactionPool {
+    validTransactionPool: [Transaction!]
+    orphanTransactionPool: [Transaction!]
+  }
+
   type Query {
     blockchain: [Block!]
-    block(id: GraphQLLong!): Block
-    transactionPool: [Transaction!]
+    blockByID(id: GraphQLLong!): Block
+    block(blockHash: String!): Block
+    transactionPool: TransactionPool
+    transaction(transactionHash: String!): Transaction
     myBalance: GraphQLLong!
     balance(publicKeyHash: String!): GraphQLLong!
     users: [String!]!
@@ -48,7 +55,7 @@ const typeDefs = gql`
   }
 
   type Mutation {
-    generateBlock: Block
+    generateBlock: Block # 테스트용. 나중에 minerPublicKeyHash 없애기
     createTransaction(
       recipientPublicKeyHash: [String!]!
       value: [GraphQLLong!]!
@@ -58,7 +65,7 @@ const typeDefs = gql`
     receiveBlockchain(blockchain: String!): Boolean!
     receiveBlock(block: String!): Boolean!
     receiveTransaction(transaction: String!): Boolean!
-    addPeer(peer: String!): Boolean!
+    addPeer(url: String!): Boolean!
   }
 `;
 

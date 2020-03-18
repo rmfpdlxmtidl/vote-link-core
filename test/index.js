@@ -14,7 +14,7 @@ import blockchain, {
   isValidTransactionPool
 } from '../src/blockchain/blockchain';
 import wallet, { recipientWallet } from '../src/blockchain/wallet';
-import resolver, { txPool } from '../src/graphql/resolvers';
+import resolver, { validTxPool } from '../src/graphql/resolvers';
 
 const genesisBlock = {
   id: 0,
@@ -208,6 +208,7 @@ function blockchainTest() {
   if (!resolver.Query.blockchain()) return false;
 
   const tx = resolver.Mutation.createTransaction(null, {
+    senderPrivateKey: wallet.privateKey,
     recipientPublicKeyHash: [
       recipientWallet.publicKeyHash,
       recipientWallet.publicKeyHash
@@ -217,59 +218,88 @@ function blockchainTest() {
     memo: 'First transaction'
   });
   if (!tx) return false;
-  if (!resolver.Mutation.generateBlock()) return false;
+  console.log('created transaction 1');
+
+  if (
+    !resolver.Mutation.generateBlock(null, {
+      minerPublicKeyHash: wallet.publicKeyHash
+    })
+  )
+    return false;
+  console.log('generated first block');
 
   if (!resolver.Query.blockchain()) return false;
+  console.log('blockchain tested');
   if (resolver.Query.myBalance() !== 70) return false;
+  console.log('my balance tested');
   if (
     resolver.Query.balance(null, {
       publicKeyHash: recipientWallet.publicKeyHash
     }) !== 30
   )
     return false;
+  console.log('Recipient balance tested');
 
-  const tx2 = resolver.Mutation.createTransaction('', {
+  const tx2 = resolver.Mutation.createTransaction(null, {
+    senderPrivateKey: wallet.privateKey,
     recipientPublicKeyHash: recipientWallet.publicKeyHash,
     value: 10,
     fee: 1,
     memo: 'Second transaction'
   });
   if (!tx2) return false;
+  console.log('created transaction 2');
 
-  const tx3 = createTransaction(
-    recipientWallet.privateKey,
-    wallet.publicKeyHash,
-    5,
-    5,
-    'Third transaction'
+  const tx3 = resolver.Mutation.createTransaction(null, {
+    senderPrivateKey: recipientWallet.privateKey,
+    recipientPublicKeyHash: wallet.publicKeyHash,
+    value: 5,
+    fee: 5,
+    memo: 'Third transaction'
+  });
+  if (!tx3) return false;
+  console.log('created transaction 3');
+
+  const tx4 = resolver.Mutation.createTransaction(null, {
+    senderPrivateKey: recipientWallet.privateKey,
+    recipientPublicKeyHash: wallet.publicKeyHash,
+    value: 40,
+    fee: 5,
+    memo: 'Fourth transaction'
+  });
+  if (tx4) return false;
+  console.log('Not enough balance tested');
+
+  if (addTransactionToPool(tx, validTxPool)) return false; // STXO를 참조하는 tx가 txPool에 포함되는지 테스트
+  console.log(
+    'Can refering STXO transaction(double spending) include transaction pool tested'
   );
-  if (!addTransactionToPool(tx3, txPool)) return false;
-
-  const tx4 = createTransaction(
-    recipientWallet.privateKey,
-    wallet.publicKeyHash,
-    40,
-    5,
-    'Fourth transaction'
+  if (addTransactionToPool(tx3, validTxPool)) return false; // UTXO를 참조하지만 이중 지불인 tx가 txPool에 포함되는지 테스트
+  console.log(
+    'Can refering UTXO transaction, but double spending transaction include transaction pool tested'
   );
-  if (tx4) return false; // 잔액 부족 테스트
-
-  if (addTransactionToPool(tx, txPool)) return false; // STXO를 참조하는 tx가 txPool에 포함되는지 테스트
-  if (addTransactionToPool(tx3, txPool)) return false; // UTXO를 참조하지만 이중 지불인 tx가 txPool에 포함되는지 테스트
   if (!resolver.Query.transactionPool()) return false;
-  generateBlock(
-    extractValidTransactions(txPool),
-    recipientWallet.publicKeyHash
-  );
+  console.log('Transaction pool tested');
+  if (
+    !resolver.Mutation.generateBlock(null, {
+      minerPublicKeyHash: recipientWallet.publicKeyHash
+    })
+  )
+    return false;
+  console.log('generated second block');
 
   if (!resolver.Query.blockchain()) return false;
+  console.log('blockchain tested');
   if (resolver.Query.myBalance() !== 64) return false;
+  console.log('My balance tested');
   if (
     resolver.Query.balance(null, {
       publicKeyHash: recipientWallet.publicKeyHash
     }) !== 86
   )
     return false;
+  console.log('Recipient balance tested');
+
   return true;
 }
 
