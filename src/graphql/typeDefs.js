@@ -38,8 +38,8 @@ const typeDefs = gql`
   }
 
   type TransactionPool {
-    validTransactionPool: [Transaction!]
-    orphanTransactionPool: [Transaction!]
+    validTxPool: [Transaction!]
+    orphanTxPool: [Transaction!]
   }
 
   type Query {

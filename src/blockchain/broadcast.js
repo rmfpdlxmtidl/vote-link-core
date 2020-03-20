@@ -13,15 +13,17 @@ const MAX_PEER_COUNT = 5;
 export function addPeer(url) {
   if (peers.length >= MAX_PEER_COUNT) return false;
   if (!urlRegExp.test(url)) return false;
-  if (isSameURL(url)) return false;
+  if (isSameURL(myURL, url)) return false;
+  if (peers.some(peer => isSameURL(peer, url))) return false;
   peers.push(url);
   return true;
 }
 
 // 서버 URL과 동일한지 확인. 정확하지 않음.
-function isSameURL(url) {
+function isSameURL(url, url2) {
   const u = new URL(url);
-  return u.host === myURL.host && u.protocol === myURL.protocol;
+  const u2 = new URL(url2);
+  return u.host === u2.host && u.protocol === u2.protocol;
 }
 
 // 피어 리스트에 있는 모든 URL로 block을 전파한다.
@@ -46,8 +48,8 @@ export async function broadcastBlock(block) {
         ? 'Broadcasted block'
         : 'Fail to broadcast block';
       console.log(message);
-    } catch (err) {
-      console.warn(`Received error. ${error}`);
+    } catch (error) {
+      console.warn(`broadcastBlock(): ${error}`);
     }
   }
 }
@@ -74,8 +76,8 @@ export async function broadcastTransaction(transaction) {
         ? 'Broadcasted transaction'
         : 'Fail to broadcast transaction';
       console.log(message);
-    } catch (err) {
-      console.warn(`Received error. ${error}`);
+    } catch (error) {
+      console.warn(`broadcastTransaction(): ${error}`);
     }
   }
 }

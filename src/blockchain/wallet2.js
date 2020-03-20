@@ -2,7 +2,7 @@ import CryptoJS from 'crypto-js';
 import { ec } from '../utils';
 
 const privateKey =
-  'a5923471ef3a9ab2d4ed321972345d8afe541521405b911319081f5a5db3fb87';
+  'a2fe6f13a9828bc30455a16ed2d561904e27c1e98cd765bff0554cbf43d78eef';
 //const privateKey = ec
 //  .genKeyPair()
 //  .getPrivate()
@@ -17,7 +17,7 @@ export const wallet = {
 };
 
 const privateKey2 =
-  'a2fe6f13a9828bc30455a16ed2d561904e27c1e98cd765bff0554cbf43d78eef';
+  'a5923471ef3a9ab2d4ed321972345d8afe541521405b911319081f5a5db3fb87';
 //const privateKey2 = ec
 //  .genKeyPair()
 //  .getPrivate()

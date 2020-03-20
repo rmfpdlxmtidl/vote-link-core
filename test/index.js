@@ -305,5 +305,8 @@ function blockchainTest() {
 
 console.log('pureFunctionTest():');
 console.log(pureFunctionTest());
-console.log('blockchainTest():');
-console.log(blockchainTest());
+
+
+
+//console.log('blockchainTest():');
+//console.log(blockchainTest());

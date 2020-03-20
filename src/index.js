@@ -1,8 +1,8 @@
 import { ApolloServer } from 'apollo-server';
+import { URL } from 'url';
 import typeDefs from './graphql/typeDefs';
 import resolvers from './graphql/resolvers';
 //import context from './graphql/context';
-import { URL } from 'url';
 
 export let myURL;
 

@@ -1,44 +1,39 @@
 import GraphQLLong from 'graphql-type-long';
 import blockchain, {
   validTxPool,
+  orphanTxPool,
   generateBlock,
-  addBlockToBlockchain,
   createTransaction,
   replaceBlockchain,
+  addBlockToBlockchain,
   addTransactionToPool,
   extractValidTransactions,
-  rearrangeTransactionPool,
+  rearrangeValidTxPool,
+  rearrangeOrphanTxPool,
   isValidBlockchain,
   isValidBlock,
-  isValidTransaction,
-  isValidTransactionPool,
+  isValidTxPool,
   getUTXO,
   getBalance,
   getPublicKeyHashList,
-  getTransaction
+  getTransaction,
+  getBlock
 } from '../blockchain/blockchain';
-import { getBlockHash } from '../blockchain/block';
 import wallet, { recipientWallet } from '../blockchain/wallet';
-import { addPeer } from './broadcast';
+import { addPeer } from '../blockchain/broadcast';
 
 const resolvers = {
   GraphQLLong,
   Query: {
     blockchain: () => (isValidBlockchain(blockchain) ? blockchain : null),
-    block: (_, { blockHash }) => {
-      const block = blockchain.find(block => getBlockHash(block) === blockHash);
-      return isValidBlock(block) ? block : null;
-    },
+    block: (_, { blockHash }) => getBlock(blockHash),
     blockByID: (_, { id }) =>
-      isValidBlock(blockchain[id]) ? blockchain[id] : null,
-    transactionPool: () =>
-      isValidTransactionPool(validTxPool)
-        ? { validTxPool, orphanTxPool }
+      id < blockchain.length && isValidBlock(blockchain[id])
+        ? blockchain[id]
         : null,
-    transaction: (_, { transactionHash }) => {
-      const tx = getTransaction(transactionHash);
-      return isValidTransaction(tx) ? tx : null;
-    },
+    transactionPool: () =>
+      isValidTxPool(validTxPool) ? { validTxPool, orphanTxPool } : null,
+    transaction: (_, { transactionHash }) => getTransaction(transactionHash),
     balance: (_, { publicKeyHash }) => getBalance(getUTXO(publicKeyHash)),
     myBalance: () => getBalance(getUTXO(wallet.publicKeyHash)),
     users: () => [recipientWallet.publicKeyHash, ...getPublicKeyHashList()], // recipientWallet.publicKeyHash는 테스트용
@@ -51,8 +46,7 @@ const resolvers = {
         wallet.publicKeyHash
       );
       if (!addBlockToBlockchain(block)) return null;
-      rearrangeTransactionPool();
-      return block;
+      return rearrangeOrphanTxPool() ? block : null;
     },
     createTransaction: (_, { recipientPublicKeyHash, value, fee, memo }) => {
       const tx = createTransaction(
@@ -68,7 +62,8 @@ const resolvers = {
     receiveBlockchain: (_, { blockchain }) =>
       replaceBlockchain(JSON.parse(blockchain)),
 
-    receiveBlock: (_, { block }) => addBlockToBlockchain(JSON.parse(block)),
+    receiveBlock: (_, { block }) =>
+      addBlockToBlockchain(JSON.parse(block)) ? rearrangeValidTxPool() : false,
     receiveTransaction: (_, { transaction }) =>
       addTransactionToPool(JSON.parse(transaction)),
     addPeer: (_, { url }) => addPeer(url)
