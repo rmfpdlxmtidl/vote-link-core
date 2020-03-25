@@ -1,24 +1,27 @@
 import CryptoJS from 'crypto-js';
-import { hexToBinary, hashRegExp } from '../utils';
+import { hexToBinary, hashRegExp, getDoubleHash } from '../utils';
 import { getTransactionHash } from './transaction';
 import blockchain from './blockchain';
 
-// 블록 생성 주기를 설정해준다. in seconds
+// 블록 생성 주기. in seconds
 const BLOCK_GENERATION_INTERVAL = 10;
 
-// 난이도 조정 주기를 설정해준다. in blocks
+// 블록 타임스탬프 최대 간격. in milliseconds
+const MAX_BLOCK_TIMESTAMP_GAP = 60000;
+
+// 난이도 조정 주기. in blocks
 const BITS_ADJUSTMENT_INTERVAL = 2;
 
 // 블록 헤더의 해시값을 반환한다. 순수함수
 export function getBlockHash(blockHeader) {
-  return CryptoJS.SHA256(
+  return getDoubleHash(
     blockHeader.version +
       blockHeader.previousBlockHash +
       blockHeader.merkleRoot +
       blockHeader.timestamp +
       blockHeader.bits +
       blockHeader.nonce
-  ).toString();
+  );
 }
 
 // transaction의 merkle tree의 root hash를 반환한다. 순수함수
@@ -77,8 +80,7 @@ export function getBits(id, timestamp) {
 export function getNonce(blockHeader) {
   blockHeader.nonce = 0;
   while (true) {
-    const blockHash = getBlockHash(blockHeader);
-    if (isValidBlockHash(blockHash, blockHeader.bits))
+    if (isValidBlockHash(getBlockHash(blockHeader), blockHeader.bits))
       return blockHeader.nonce;
     blockHeader.nonce++;
   }
@@ -157,7 +159,7 @@ function isValidBlockHash(hexBlockHash, bits) {
 // 순수함수
 function isValidTimestamp(block, previousBlock) {
   return (
-    previousBlock.timestamp - 60000 < block.timestamp &&
-    block.timestamp - 60000 < new Date().getTime()
+    previousBlock.timestamp - MAX_BLOCK_TIMESTAMP_GAP < block.timestamp &&
+    block.timestamp - MAX_BLOCK_TIMESTAMP_GAP < new Date().getTime()
   );
 }

@@ -6,7 +6,7 @@ import { URL } from 'url';
 import { urlRegExp } from '../utils';
 import { myURL } from '../index';
 
-const peers = [];
+export const peers = [];
 const MAX_PEER_COUNT = 5;
 
 // 피어 리스트에 url을 추가한다.

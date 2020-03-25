@@ -1,5 +1,4 @@
-import CryptoJS from 'crypto-js';
-import { ec } from '../utils';
+import { ec, getDoubleHash } from '../utils';
 
 const privateKey =
   'a5923471ef3a9ab2d4ed321972345d8afe541521405b911319081f5a5db3fb87';
@@ -8,7 +7,7 @@ const privateKey =
 //  .getPrivate()
 //  .toString(16);
 const publicKey = getPublicKey(privateKey);
-const publicKeyHash = CryptoJS.SHA256(publicKey).toString();
+const publicKeyHash = getDoubleHash(publicKey);
 
 export const wallet = {
   privateKey,
@@ -23,7 +22,7 @@ const privateKey2 =
 //  .getPrivate()
 //  .toString(16);
 const publicKey2 = getPublicKey(privateKey2);
-const publicKeyHash2 = CryptoJS.SHA256(publicKey2).toString();
+const publicKeyHash2 = getDoubleHash(publicKey2);
 
 export const recipientWallet = {
   privateKey: privateKey2,

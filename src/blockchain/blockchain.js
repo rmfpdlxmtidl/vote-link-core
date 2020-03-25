@@ -1,4 +1,3 @@
-import CryptoJS from 'crypto-js';
 import Multimap from 'multimap';
 import {
   getBlockHash,
@@ -19,42 +18,16 @@ import {
 } from './transaction';
 import { broadcastBlock, broadcastTransaction } from './broadcast';
 import { getPublicKey } from './wallet';
-import { ec, hashRegExp } from '../utils';
+import { ec, hashRegExp, getDoubleHash } from '../utils';
 
-// 블록에 포함되는 transactions 배열의 최대 바이트 크기(1MB)
-const MAX_TRANSACTIONS_SIZE = 1024 * 1024;
+// 블록에 포함되는 transactions 배열의 최대 크기. in bytes
+const MAX_TRANSACTIONS_SIZE = 1024 * 1024; // 1MB
 
-export let blockchain = [generateGenesisBlock()];
-const orphanBlock = new Multimap();
+// 거래 타임스탬프의 최대 간격. in milliseconds
+const MAX_TX_TIMESTAMP_GAP = 60000;
 
-export let validTxPool = []; // 블록체인에 기록된 UTXO를 참조하는 거래
-export let orphanTxPool = []; // 그 외. validTxPool에 있는 TXO를 참조하는 거래도 이쪽에 포함.
-
-// 제네시스 블록을 생성. 부수 효과 있음.
-function generateGenesisBlock() {
-  /*
-  const genesisBlock = {
-    id: 0,
-    version: 1,
-    previousBlockHash: '0'.repeat(64),
-    merkleRoot: '',
-    timestamp: new Date().getTime(),
-    bits: 10,
-    nonce: 0,
-    transactions: []
-  };
-  genesisBlock.transactions.push(
-    getCoinbaseTransaction(
-      wallet.publicKeyHash,
-      0,
-      0,
-      "Genesis Block's Coinbase Transaction"
-    )
-  );
-  genesisBlock.merkleRoot = getMerkleRoot(genesisBlock.transactions);
-  genesisBlock.nonce = getNonce(genesisBlock);
-  */
-  const genesisBlock = {
+export let blockchain = [
+  {
     id: 0,
     version: 1,
     previousBlockHash: '0'.repeat(64),
@@ -85,7 +58,36 @@ function generateGenesisBlock() {
         memo: "Genesis Block's Coinbase Transaction"
       }
     ]
+  }
+]; // replaceBlockchain 때문에 let
+const branchBlocks = new Multimap();
+let orphanBlocks = [];
+
+export let validTxPool = []; // 블록체인에 기록된 UTXO를 참조하는 거래
+export let orphanTxPool = []; // 그 외. validTxPool에 있는 TXO를 참조하는 거래도 이쪽에 포함.
+
+// 제네시스 블록을 생성한다. 이 함수는 처음 1번만 호출된다. 부수 효과 있음.
+function generateGenesisBlock() {
+  const genesisBlock = {
+    id: 0,
+    version: 1,
+    previousBlockHash: '0'.repeat(64),
+    merkleRoot: '',
+    timestamp: new Date().getTime(),
+    bits: 10,
+    nonce: 0,
+    transactions: []
   };
+  genesisBlock.transactions.push(
+    getCoinbaseTransaction(
+      wallet.publicKeyHash,
+      0,
+      0,
+      "Genesis Block's Coinbase Transaction"
+    )
+  );
+  genesisBlock.merkleRoot = getMerkleRoot(genesisBlock.transactions);
+  genesisBlock.nonce = getNonce(genesisBlock);
   return genesisBlock;
 }
 
@@ -160,7 +162,7 @@ export function createTransaction(
 
   // 자신의 잔액 조회
   const senderPublicKey = getPublicKey(senderPrivateKey);
-  const senderPublicKeyHash = CryptoJS.SHA256(senderPublicKey).toString();
+  const senderPublicKeyHash = getDoubleHash(senderPublicKey);
   const UTXO = getUTXO(senderPublicKeyHash);
   if (getBalance(UTXO) < value_ + fee_) {
     console.warn('createTransaction(): Not enough balance');
@@ -233,12 +235,18 @@ export function createTransaction(
 export function addBlockToBlockchain(block) {
   // 제네시스 블록은 추가될 수 없다.
   if (block.id === 0) {
-    console.warn('isValidBlock() : Genesis block is not allowed');
+    console.warn('addBlockToBlockchain() : Genesis block is not allowed');
     return false;
   }
-  // 블록 헤더가 유효한지 확인
+  // 고아 블록 포함
+  if (!blockchain[block.id - 1]) {
+    console.log('addBlockToBlockchain() : Orphan block');
+    orphanBlocks.push(block);
+    return true;
+  }
   if (!isValidBlockHeader(block, blockchain[block.id - 1])) {
-    console.warn('isValidBlock() : Invalid block header');
+    // 블록 헤더가 유효한지 확인
+    console.warn('addBlockToBlockchain() : Invalid block header');
     return false;
   }
   // 블록의 모든 transaction이 유효한지 확인
@@ -249,22 +257,67 @@ export function addBlockToBlockchain(block) {
         : isValidTransaction(tx)
     )
   ) {
-    console.warn('isValidBlock() : Invalid transaction');
+    console.warn('addBlockToBlockchain() : Invalid transaction');
     return false;
   }
   // 마지막 블록 다음 블록이면 블록체인에 추가하고, 아니면 블록 가지에 추가한다.
-  if (block.id === blockchain[blockchain.length - 1].id + 1) {
-    blockchain.push(block);
-  } else orphanBlock.set(block.id, block);
-  // 해당 블록을 다른 노드에 전파
+  if (block.id !== blockchain[blockchain.length - 1].id + 1) {
+    console.log('addBlockToBlockchain() : Branch block');
+    branchBlocks.set(block.id, block);
+    return true;
+  }
+  // 블록체인에 블록을 연결한다.
+  console.log('addBlockToBlockchain() : Valid block');
+  blockchain.push(block);
+  // 해당 블록을 다른 노드에 전파한다.
   broadcastBlock(block);
+  // 고아 거래 풀에 있는 유효 거래를 유효 거래 풀로 이동시킨다.
+  const _orphanTxPool = [];
+  orphanTxPool.forEach(tx => {
+    if (!doesPreviousTransactionOutputExist(tx)) {
+      _orphanTxPool.push(tx);
+      return true;
+    }
+    if (!isValidTransactionInput(tx, isUTXO)) return false;
+    if (
+      validTxPool.some(tx2 =>
+        tx2.inputs.some(({ previousTransactionHash, outputIndex }) => {
+          if (
+            tx.inputs.find(
+              input =>
+                input.previousTransactionHash === previousTransactionHash &&
+                input.outputIndex === outputIndex
+            )
+          )
+            return true;
+        })
+      )
+    )
+      return false;
+    validTxPool.push(tx);
+  });
+  orphanTxPool = _orphanTxPool;
+  console.log('addBlockToBlockchain(): Rearranged orphan transaction pool');
+  // 유효 거래 풀에 있는 이중 지불 거래를 삭제한다.
+  validTxPool = validTxPool.filter(tx => isValidTransaction(tx));
+  console.log('addBlockToBlockchain(): Rearranged valid transaction pool');
   return true;
 }
 
 // 거래를 '고아 거래 풀' 또는 '유효 거래 풀'에 추가한다. 부수 효과 있음.
 export function addTransactionToPool(tx) {
+  // 거래가 있는지 확인
   if (!tx) {
-    console.warn('addTransactionToPool(): Invalid transaction');
+    console.warn('addTransactionToPool(): Null transaction');
+    return false;
+  }
+  // 원래는 수수료가 높아야 블록에 바로 포함될 확률이 높아진다. 하지만 거래 시각을 무작정 낮춰도 블록에 바로 포함될 확률이 높아진다.
+  // 그래서 거래 시각이 엄청 오래된 거래는 노드에서 거부해야 한다.
+  // 이렇게 하면 거래 시각을 낮출 수록 수수료를 낮게 설정해도 블록에 바로 포함될 수 있지만, 많은 노드에게 퍼지지 못한다.
+  if (tx.timestamp < new Date().getTime() - MAX_TX_TIMESTAMP_GAP) {
+    console.warn(
+      'addTransactionToPool(): Invalid transaction timestamp. Timestamp of transaction is too old.'
+    );
     return false;
   }
   // 거래 구조가 유효한지 확인
@@ -316,73 +369,6 @@ export function addTransactionToPool(tx) {
   return true;
 }
 
-// validTxPool 유효한 tx만 추출해서 반환한다. 기존 validTxPool을 수정한다.(부수 효과 있음.)
-export function extractValidTransactions() {
-  // validTxPool 안에 이중지불이 없다고 가정
-  const transactions = [];
-
-  let accTxSize = 0; // 누적 tx 크기
-  // 반절은 '수수료/거래크기' 높은 tx부터 포함
-  while (accTxSize < MAX_TRANSACTIONS_SIZE / 2 && validTxPool.length > 0) {
-    validTxPool.sort((a, b) =>
-      getTransactionFee(a) / getTransactionSize(a) <
-      getTransactionFee(b) / getTransactionSize(b)
-        ? -1
-        : 1
-    );
-    const tx = validTxPool.pop();
-    transactions.push(tx);
-    accTxSize += getTransactionSize(tx);
-  }
-  // 반절은 가장 오래된 tx부터 포함
-  while (accTxSize < MAX_TRANSACTIONS_SIZE && validTxPool.length > 0) {
-    validTxPool.sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
-    const tx = validTxPool.pop();
-    transactions.push(tx);
-    accTxSize += getTransactionSize(tx);
-  }
-
-  return transactions;
-}
-
-// 고아 거래 풀에 있는 거래 중 유효한 거래를 유효 거래 풀로 이동시킨다.
-export function rearrangeOrphanTxPool() {
-  const _orphanTxPool = [];
-  orphanTxPool.forEach(tx => {
-    if (!doesPreviousTransactionOutputExist(tx)) {
-      _orphanTxPool.push(tx);
-      return true;
-    }
-    if (!isValidTransactionInput(tx, isUTXO)) return false;
-    if (
-      validTxPool.some(tx2 =>
-        tx2.inputs.some(({ previousTransactionHash, outputIndex }) => {
-          if (
-            tx.inputs.find(
-              input =>
-                input.previousTransactionHash === previousTransactionHash &&
-                input.outputIndex === outputIndex
-            )
-          )
-            return true;
-        })
-      )
-    )
-      return false;
-    validTxPool.push(tx);
-  });
-  orphanTxPool = _orphanTxPool;
-  return true;
-}
-
-// 유효 거래 풀에 있는 이중 지불 거래를 삭제한다.
-export function rearrangeValidTxPool() {
-  console.log('rearrangeValidTxPool(): Rearranging valid transaction pool');
-  validTxPool = validTxPool.filter(tx => isValidTransaction(tx));
-  console.log('rearrangeValidTxPool(): Rearranged valid transaction pool');
-  return true;
-}
-
 // 부수 효과 있음.
 export function replaceBlockchain(receivedBlockchain) {
   // 수신된 블록체인 유효성 검사.
@@ -403,6 +389,49 @@ export function replaceBlockchain(receivedBlockchain) {
   // #### 바꿔야 할 부분 선택해서 버려진 블록 배열에 넣기
   blockchain = receivedBlockchain;
   return true;
+}
+
+// validTxPool 유효한 tx만 추출해서 반환한다. 부수 효과 없음.
+export function filterValidTransactions() {
+  const transactions = []; // validTxPool 안에 이중지불이 없다고 가정
+  let accTxSize = 0; // 누적 tx 크기
+
+  // '수수료/거래크기' 내림차순으로 정렬
+  validTxPool.sort((a, b) =>
+    getTransactionFee(a) / getTransactionSize(a) <
+    getTransactionFee(b) / getTransactionSize(b)
+      ? 1
+      : -1
+  );
+  // 반절은 '수수료/거래크기' 높은 tx부터 포함하고 미래 거래는 포함하지 않는다.
+  validTxPool.every(tx => {
+    if (
+      accTxSize < MAX_TRANSACTIONS_SIZE / 2 &&
+      tx.timestamp <= new Date().getTime()
+    ) {
+      transactions.push(tx);
+      accTxSize += getTransactionSize(tx);
+      return true;
+    } else return false;
+  });
+  // 거래 timestamp 오름차순으로 정렬
+  validTxPool.sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
+  // 반절은 가장 오래된 tx부터 포함
+  validTxPool.every(tx => {
+    if (
+      accTxSize < MAX_TRANSACTIONS_SIZE &&
+      tx.timestamp <= new Date().getTime() &&
+      !transactions.some(
+        tx2 => getTransactionHash(tx) === getTransactionHash(tx2)
+      )
+    ) {
+      transactions.push(tx);
+      accTxSize += getTransactionSize(tx);
+      return true;
+    } else return false;
+  });
+
+  return transactions;
 }
 
 // 블록체인이 유효한지 검증한다. 외부 변수(genesisBlock) 참조
@@ -494,20 +523,25 @@ export function isValidTransactionInput(transaction, isTXO) {
   let inputSum = 0;
   if (
     !transaction.inputs.every(input => {
-      const previousTransactionOutput = getTransactionOutput(
-        input.previousTransactionHash,
-        input.outputIndex
-      );
-      // previous transaction output이 존재하는지 #### 없으면 고아풀에 담김
-      if (!previousTransactionOutput) {
+      const previousTransaction = getTransaction(input.previousTransactionHash);
+      // previous transaction output이 존재하는지
+      if (!previousTransaction) {
         console.warn(
-          'isValidTransactionInput(): There is no previous transaction output'
+          'isValidTransactionInput(): There is no previous transaction'
         );
         return false;
       }
+      // 이전 거래 타임스탬프와 현재 거래 타임스탬프 비교 #### 필요할까?
+      if (previousTransaction.timestamp > transaction.timestamp) {
+        console.warn(
+          'isValidTransactionInput(): Invalid transaction timestamp'
+        );
+        return false;
+      }
+      const previousTransactionOutput = previousTransaction[input.outputIndex];
       // 각 input의 senderPublicKey의 유효성
       if (
-        !CryptoJS.SHA256(input.senderPublicKey).toString() ===
+        !getDoubleHash(input.senderPublicKey) ===
         previousTransactionOutput.recipientPublicKeyHash
       ) {
         console.warn(
@@ -695,6 +729,13 @@ export function getBlock(blockHash) {
   return blockchain.find(
     block => getBlockHash(block) === blockHash && isValidBlock(block)
   );
+}
+
+export function getBlockByID(id) {
+  if (id >= blockchain.length) {
+    console.warn('getBlockByID(): Invalid block ID');
+    return false;
+  }
 }
 
 // 해당 Transaction을 찾으면 그 Transaction을 반환하고, 못 찾으면 null을 반환한다. blockchain 참조

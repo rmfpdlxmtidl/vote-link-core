@@ -8,7 +8,7 @@ const privateKey =
 //  .getPrivate()
 //  .toString(16);
 const publicKey = getPublicKey(privateKey);
-const publicKeyHash = CryptoJS.SHA256(publicKey).toString();
+const publicKeyHash = getDoubleHash(publicKey);
 
 export const wallet = {
   privateKey,
@@ -23,7 +23,7 @@ const privateKey2 =
 //  .getPrivate()
 //  .toString(16);
 const publicKey2 = getPublicKey(privateKey2);
-const publicKeyHash2 = CryptoJS.SHA256(publicKey2).toString();
+const publicKeyHash2 = getDoubleHash(publicKey2);
 
 export const recipientWallet = {
   privateKey: privateKey2,

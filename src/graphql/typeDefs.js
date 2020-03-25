@@ -44,7 +44,7 @@ const typeDefs = gql`
 
   type Query {
     blockchain: [Block!]
-    blockByID(id: GraphQLLong!): Block
+    blockByID(id: GraphQLLong!): [Block!]
     block(blockHash: String!): Block
     transactionPool: TransactionPool
     transaction(transactionHash: String!): Transaction
@@ -52,6 +52,7 @@ const typeDefs = gql`
     balance(publicKeyHash: String!): GraphQLLong!
     users: [String!]!
     me: String!
+    peers: [String!]!
   }
 
   type Mutation {

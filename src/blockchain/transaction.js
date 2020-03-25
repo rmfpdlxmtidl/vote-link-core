@@ -1,5 +1,9 @@
-import CryptoJS from 'crypto-js';
-import { hashRegExp, publicPointRegExp, getStringSize } from '../utils';
+import {
+  hashRegExp,
+  publicPointRegExp,
+  getStringSize,
+  getDoubleHash
+} from '../utils';
 
 // coinbase transaction을 반환한다. 순수함수
 export function getCoinbaseTransaction(
@@ -44,9 +48,9 @@ export function getTransactionHash({ version, inputs, outputs, timestamp }) {
     output => output.recipientPublicKeyHash + output.value
   );
 
-  return CryptoJS.SHA256(
+  return getDoubleHash(
     version + inputsData.join('') + outputsData.join('') + timestamp
-  ).toString();
+  );
 }
 
 // Transaction의 서명에 필요한 해시값을 구한다. 순수함수
@@ -65,9 +69,9 @@ export function getTransactionMessage(
     output => output.recipientPublicKeyHash + output.value
   );
 
-  return CryptoJS.SHA256(
+  return getDoubleHash(
     version + inputsData.join('') + outputsData.join('') + timestamp
-  ).toString();
+  );
 }
 
 export function getTransactionSize(transaction) {
