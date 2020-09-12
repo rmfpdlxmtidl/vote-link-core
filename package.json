@@ -20,7 +20,7 @@
     "graphql": "^14.6.0",
     "graphql-type-long": "^0.1.1",
     "multimap": "^1.1.0",
-    "node-fetch": "^2.6.0",
+    "node-fetch": "^2.6.1",
     "url": "^0.11.0"
   },
   "devDependencies": {
