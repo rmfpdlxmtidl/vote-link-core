@@ -16,7 +16,7 @@
     "apollo-link-http": "^1.5.16",
     "apollo-server": "^2.10.1",
     "crypto-js": "^4.0.0",
-    "elliptic": "^6.5.2",
+    "elliptic": "^6.5.4",
     "graphql": "^14.6.0",
     "graphql-type-long": "^0.1.1",
     "multimap": "^1.1.0",
